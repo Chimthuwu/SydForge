@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/vehicle.gd" id="1"]
+[node name="Taxi" type="CharacterBody3D"]
+script = ExtResource("1")
+vehicle_name = "SUNBEAM · TAXI"
+paint = Color(1,0.72,0.16,1)
+top_speed = 34.0
+acceleration = 13.0
+steering = 1.65
+max_health = 140.0
+style = 3

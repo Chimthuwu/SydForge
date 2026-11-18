@@ -1,0 +1,5 @@
+.godot/
+.runtime/
+*.log
+Godot*.exe
+tests/*.png
