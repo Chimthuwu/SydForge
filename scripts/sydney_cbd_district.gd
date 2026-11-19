@@ -24,6 +24,7 @@ const CityLightsManagerScript := preload("res://sydney/ecosystem/city_lights_man
 const TrafficManagerScript := preload("res://sydney/ecosystem/traffic_manager.gd")
 const PedestrianManagerScript := preload("res://sydney/ecosystem/pedestrian_manager.gd")
 const WildlifeManagerScript := preload("res://sydney/ecosystem/wildlife_manager.gd")
+const HarbourBoatsScript := preload("res://sydney/harbour/harbour_boats.gd")
 
 const BRIDGE_OPERA_XZ := Vector2(658.72, -1763.81)
 
@@ -194,3 +195,9 @@ func _initialize_living_ecosystem() -> void:
 	wild_mgr.name = "WildlifeManager"
 	add_child(wild_mgr)
 	wild_mgr.setup(cbd_world, player)
+
+	# 6. Harbour boats (ferries, small craft and a tug)
+	var boats := HarbourBoatsScript.new()
+	boats.name = "HarbourBoats"
+	add_child(boats)
+	boats.setup(player)

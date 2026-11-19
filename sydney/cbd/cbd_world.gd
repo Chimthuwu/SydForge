@@ -46,6 +46,7 @@ const AUTHORED_LANDMARK_BUILDINGS := [
 	"way/16749128", # St Mary's Cathedral
 ]
 const CbdLandmarks := preload("res://sydney/cbd/cbd_landmarks.gd")
+const CbdRetail := preload("res://sydney/cbd/cbd_retail.gd")
 const FACADE_SHADER := preload("res://shaders/facade.gdshader")
 const ASPHALT_SHADER := preload("res://shaders/asphalt.gdshader")
 const CbdRailNetwork := preload("res://sydney/cbd/cbd_rail_network.gd")
@@ -72,6 +73,14 @@ func _build() -> void:
 	geometry_counts["CBDLandmarks"] = landmarks.stats
 	var elapsed := (Time.get_ticks_usec() - start) / 1000.0
 	build_times_ms["CBDLandmarks"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+	start = Time.get_ticks_usec()
+	var retail := CbdRetail.new()
+	retail.build(data)
+	add_child(retail)
+	geometry_counts["RetailChains"] = retail.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["RetailChains"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 	start = Time.get_ticks_usec()
 	var railway: Node3D = CbdRailNetwork.new()

@@ -215,15 +215,14 @@ func _apply_lighting(delta: float, force: bool = false) -> void:
 		sun_yaw = lerpf(-110.0, 70.0, night_t)
 		# Moon or faint night directional light
 		sun_pitch = -sin(night_t * PI) * 45.0 - 5.0
-		light_col = Color("849fc9") # Cool silver-blue moonlight
-		light_energy = 0.22
-		# A cool moon fill keeps facades and the road readable without flattening
-		# the night into daylight-grey. The dark sky still owns the horizon; pool
-		# lighting from lamps, windows and vehicles does the rest.
-		ambient_col = Color("6a7f96")
-		ambient_energy = 0.46
-		sky_top = Color("0a1120") # Dark navy night sky
-		sky_horizon = Color("1b2a3b")
+		light_col = Color("9fb7d8") # Cool silver-blue moonlight
+		light_energy = 0.26
+		# A dark blue ambient base keeps silhouettes readable; lamps and windows
+		# supply the bright local pools so the city is not uniformly grey.
+		ambient_col = Color("3d4f69")
+		ambient_energy = 0.32
+		sky_top = Color("070d1a") # Dark navy night sky
+		sky_horizon = Color("142338")
 		
 		# Dusk transition (18.0 - 19.5)
 		if current_time_hours >= 18.0 and current_time_hours < 19.5:

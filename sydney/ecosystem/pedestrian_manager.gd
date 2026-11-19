@@ -7,6 +7,8 @@ extends Node3D
 @export var max_active_pedestrians: int = 50
 @export var spawn_radius: float = 120.0
 @export var despawn_radius: float = 160.0
+@export var eshay_chance: float = 0.22
+@export var walkabout_chance: float = 0.14
 
 var sydney_world: SydneyWorld
 var player_ref: Node3D

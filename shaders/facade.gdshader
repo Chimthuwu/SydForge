@@ -11,7 +11,7 @@ render_mode diffuse_burley, specular_schlick_ggx;
 uniform float night_factor = 0.0;
 uniform vec3 lit_color : source_color = vec3(1.0, 0.70, 0.38);
 uniform vec3 cool_lit_color : source_color = vec3(0.72, 0.84, 1.0);
-uniform float lit_chance = 0.30;
+uniform float lit_chance = 0.16;
 
 varying vec3 world_position;
 varying vec3 world_normal;
@@ -91,9 +91,9 @@ void fragment() {
 	vec3 glass = mix(vec3(0.035, 0.055, 0.070), sky_reflection, 0.45);
 	float lit_roll = hash21(vec2(cell + 31.0, row + 7.0));
 	bool lit = lit_roll > (1.0 - lit_chance);
-	vec3 lit_tint = mix(lit_color, cool_lit_color, step(0.82, lit_roll));
-	// Keep interiors readable rather than blown-out white rectangles.
-	float glow = lit ? (0.30 + hash21(vec2(cell, row + 13.0)) * 0.45) : 0.06;
+	vec3 lit_tint = mix(lit_color, cool_lit_color, step(0.86, lit_roll));
+	// Most occupied rooms read as a warm interior, not a white neon square.
+	float glow = lit ? (0.16 + hash21(vec2(cell, row + 13.0)) * 0.24) : 0.02;
 
 	vec3 color = mix(base, glass, window_glass);
 	color = mix(color, base * 1.06 + vec3(0.02), frame * (1.0 - window_glass) * 0.85);
@@ -106,7 +106,7 @@ void fragment() {
 	SPECULAR = mix(0.25, 0.6, window_glass);
 
 	float emission_strength = night_factor * window_glass * glow;
-	// Shopfronts stay a little brighter and warmer than office windows.
-	emission_strength *= mix(1.0, 1.45, shop);
-	EMISSION = lit_tint * emission_strength * 0.85;
+	// Shopfronts stay brighter than offices but below a blown-out glow.
+	emission_strength *= mix(1.0, 1.35, shop);
+	EMISSION = lit_tint * emission_strength * 0.62;
 }
