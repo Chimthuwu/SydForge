@@ -1,7 +1,18 @@
 # District Zero validation
 
 Engine: bundled Godot 4.7.2, Compatibility renderer. Windows, AMD Radeon RX 6600.
-Final integration result: **63 checks, 0 failures**, process exit code 0.
+
+> **Current-tree status (2026-11-19):** on commit `a8dc2a2` plus the uncommitted
+> Sydney work, the exact command
+> `APPDATA="$PWD/.runtime" ./Godot_v4.7.2-stable_win64_console.exe --headless --path . --script res://tests/integration.gd`
+> was run twice. Both runs exited 1 with **63 checks, 2 failures**:
+> `melee damages nearby enemy` and `enemy defeat grants reputation`. The same
+> two failures are recorded on the untouched tree in
+> `docs/BASELINE_VERIFICATION.md`. The 63/0 result below is the earlier
+> historical run and does not reproduce on this working tree. They were not
+> introduced or fixed by the Sydney geometry pass.
+
+Historical integration result: **63 checks, 0 failures**, process exit code 0.
 Final rendered test: all four input/state observations true, process exit code 0.
 
 All six production GDScript files passed Godot `--check-only`. The main scene

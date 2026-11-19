@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+; SYDNEY PLAYTEST — open this file and press F6 (Run Current Scene).
+; Root node uses scripts/sydney_district.gd, which is the real game
+; (scripts/district.gd) with the Sydney branch forced on. District Zero and the
+; normal F5 startup are untouched. See docs/SYDNEY_PLAYTEST.md.
+
+[ext_resource type="Script" path="res://scripts/sydney_district.gd" id="1_sydney"]
+
+[node name="SydneyPlaytest" type="Node3D"]
+script = ExtResource("1_sydney")

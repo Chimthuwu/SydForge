@@ -1,5 +1,56 @@
 extends Node3D
 
+class MiniMap extends Control:
+	var player_ref: BoomPlayer
+	var camera_rig: BoomCamera
+	var roads: Array = []
+	var redraw_timer: float = 0.0
+
+	func _process(delta: float) -> void:
+		redraw_timer += delta
+		if redraw_timer >= 0.12:
+			redraw_timer = 0.0
+			queue_redraw()
+
+	func _draw() -> void:
+		var center := size * 0.5
+		var radius := minf(size.x,size.y) * 0.48
+		draw_circle(center,radius,Color(0.015,0.025,0.035,0.91))
+		draw_arc(center,radius,0.0,TAU,64,Color(0.77,0.84,0.82,0.72),2.0,true)
+		if player_ref != null and is_instance_valid(player_ref):
+			var player_xz := Vector2(player_ref.global_position.x,player_ref.global_position.z)
+			var scale := radius / 170.0
+			for road: Dictionary in roads:
+				var points: Array = road.get("points",[])
+				var road_kind := str(road.get("highway",""))
+				var line_color := Color(0.44,0.55,0.57,0.8)
+				var line_width := 1.2
+				if road_kind in ["primary","trunk","motorway","primary_link","trunk_link"]:
+					line_color = Color("d3a94f")
+					line_width = 2.2
+				for index in range(points.size()-1):
+					var a := _screen_point(points[index],player_xz,center,scale)
+					var b := _screen_point(points[index+1],player_xz,center,scale)
+					if a.distance_to(center) <= radius - 3.0 and b.distance_to(center) <= radius - 3.0:
+						draw_line(a,b,line_color,line_width,true)
+			var yaw := camera_rig.yaw if camera_rig != null else 0.0
+			var forward := Vector2(-sin(yaw),-cos(yaw))
+			var side := Vector2(-forward.y,forward.x)
+			var marker := PackedVector2Array([
+				center + forward * 10.0,
+				center - forward * 6.0 + side * 5.5,
+				center - forward * 6.0 - side * 5.5
+			])
+			draw_colored_polygon(marker,Color("ffe08a"))
+			draw_circle(center,2.0,Color.WHITE)
+
+	func _screen_point(point: Variant, player_xz: Vector2, center: Vector2, map_scale: float) -> Vector2:
+		if typeof(point) != TYPE_ARRAY or point.size() < 2:
+			return center + Vector2.ONE * 100000.0
+		var delta := Vector2(float(point[0]),float(point[1])) - player_xz
+		return center + delta * map_scale
+
+
 var player: BoomPlayer
 var rig: BoomCamera
 var enemy: BoomEnemy
@@ -10,35 +61,50 @@ var flash: ColorRect
 var message: String = "WELCOME TO DISTRICT ZERO · Find a ride. Make some noise."
 var hurt_flash: float = 0
 var vehicles: Array[ArcadeCar] = []
-var nearest: ArcadeCar
+var nearest: Node3D
 var cross: Label
 var hit_time: float = 0.0
 var reload_bar: ProgressBar
+var health_bar: ProgressBar
+var minimap: MiniMap
+var sydney_world: SydneyWorld
+var using_sydney: bool = false
 
 func _ready() -> void:
 	configure_input()
 	build_city()
 	player = preload("res://scenes/player.tscn").instantiate()
 	add_child(player)
+	if using_sydney:
+		player.spawn = sydney_world.player_spawn
+		message = "SYDNEY · %s" % sydney_world.district_name
 	player.position = player.spawn
 	rig = BoomCamera.new()
 	rig.target = player
+	if using_sydney:
+		rig.yaw = sydney_world.player_yaw
 	add_child(rig)
 	var resources := ["comet","viper","hauler","taxi"]
 	for i in 4:
 		var car: ArcadeCar = load("res://scenes/vehicles/%s.tscn" % resources[i]).instantiate()
-		car.position = Vector3(-5.5,0.1,11-i*7)
+		if using_sydney and i < sydney_world.vehicle_spawns.size():
+			car.position = sydney_world.vehicle_spawns[i]
+			car.rotation.y = sydney_world.vehicle_yaws[i]
+		else:
+			car.position = Vector3(-5.5,0.1,11-i*7)
 		add_child(car)
 		vehicles.append(car)
 	enemy = preload("res://scenes/enemy.tscn").instantiate()
 	enemy.player = player
+	if using_sydney:
+		enemy.home = sydney_world.enemy_spawn
 	add_child(enemy)
 	enemy.position = enemy.home
 	build_hud()
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"melee":KEY_F,"reset":KEY_F5}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"melee":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -65,6 +131,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		interact()
 	if event.is_action_pressed("reload"):
 		player.reload()
+	if event.is_action_pressed("weapon_pistol"):
+		player.equip_weapon(BoomPlayer.WEAPON_PISTOL)
+	if event.is_action_pressed("weapon_shotgun"):
+		player.equip_weapon(BoomPlayer.WEAPON_SHOTGUN)
 	if event.is_action_pressed("melee"):
 		player.melee()
 	if event.is_action_pressed("reset"):
@@ -72,19 +142,26 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func interact() -> void:
 	if player.vehicle != null:
-		player.vehicle.exit_vehicle()
+		player.vehicle.call("exit_vehicle")
 	else:
 		find_nearest_vehicle()
 		if nearest != null:
-			nearest.enter(player)
+			nearest.call("enter", player)
 
 func find_nearest_vehicle() -> void:
 	nearest = null
-	var distance := 4.0
+	var distance := 7.0
 	for car in vehicles:
 		var d := player.global_position.distance_to(car.global_position)
 		if d < distance and car.health > 0:
 			nearest = car
+			distance = d
+	for traffic: Node3D in get_tree().get_nodes_in_group("traffic_vehicles"):
+		if not traffic.has_method("enter") or traffic.get("driver") != null:
+			continue
+		var d := player.global_position.distance_to(traffic.global_position)
+		if d < distance and d < 7.0:
+			nearest = traffic
 			distance = d
 
 func _process(dt: float) -> void:
@@ -94,17 +171,30 @@ func _process(dt: float) -> void:
 	cross.text = "×" if hit_time > 0 else "+"
 	cross.modulate = Color("ffcb52") if hit_time > 0 else Color.WHITE
 	cross.visible = player.vehicle == null
-	reload_bar.visible = player.reload_time > 0 and player.vehicle == null
-	reload_bar.value = (1.0-player.reload_time/1.25)*100
+	var current_reload := player.current_reload_time()
+	var reload_duration := player.current_reload_duration()
+	reload_bar.visible = current_reload > 0.0 and player.vehicle == null
+	reload_bar.value = (1.0-current_reload/reload_duration)*100.0
 	flash.color.a = hurt_flash*0.8
-	hud.text = "HEALTH  %03d     /     REP  %03d\nPISTOL  %02d / ∞   %s" % [player.health,player.kills*100,player.ammo,"RELOADING…" if player.reload_time > 0 else ""]
+	hud.text = "HEALTH  %03d     /     REP  %03d\n%s   %s" % [
+		player.health,player.kills*100+player.bonus_reputation,
+		player.weapon_status_text(),"RELOADING…" if current_reload > 0.0 else ""]
+	health_bar.value = clampf(player.health,0.0,100.0)
+	health_bar.modulate = Color("e65a54") if player.health < 30 else Color("d5b45e")
 	if player.vehicle != null:
 		var car := player.vehicle
-		status.text = "%s   /   %03d KM/H   /   HULL %d%%" % [car.vehicle_name,absf(car.speed)*3.6,car.health/car.max_health*100]
-		hint.text = "W S  accelerate / reverse     A D  steer     SPACE  brake     E  exit"
+		var max_health := maxf(float(car.get("max_health")),1.0)
+		status.text = "%s   /   %03d KM/H   /   HULL %d%%" % [
+			car.get("vehicle_name"),absf(float(car.get("speed")))*3.6,
+			float(car.get("health"))/max_health*100]
+		hint.text = "W S accelerate/reverse · A D steer · SPACE brake · SHIFT NOS boost · E exit"
 	else:
 		status.text = message
-		hint.text = "[ E ]  DRIVE %s" % nearest.vehicle_name if nearest != null else "WASD move   SHIFT sprint   SPACE jump   RMB aim   LMB fire   R reload   F melee"
+		if nearest != null:
+			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") else "DRIVE"
+			hint.text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
+		else:
+			hint.text = "WASD move · SHIFT sprint · SPACE jump · RMB aim · LMB fire · 1 pistol · 2 shotgun · R reload"
 	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 		hint.text = "MOUSE RELEASED · Click to resume     F5  respawn"
 
@@ -115,51 +205,99 @@ func build_hud() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(root)
-	var top := ColorRect.new()
-	top.color = Color(0.035,0.075,0.12,0.88)
-	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_bottom = 83
-	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(top)
+	var brand_panel := ColorRect.new()
+	brand_panel.color = Color(0.012,0.024,0.035,0.86)
+	brand_panel.position = Vector2(22,18)
+	brand_panel.size = Vector2(260,62)
+	brand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(brand_panel)
 	var title := Label.new()
-	title.text = "BOOMTOWN"
-	title.position = Vector2(30,12)
-	title.add_theme_font_size_override("font_size",32)
+	title.text = "SPLOOGE"
+	title.position = Vector2(36,18)
+	title.add_theme_font_size_override("font_size",27)
 	title.add_theme_color_override("font_color",Color("ffcb52"))
 	root.add_child(title)
 	var sub := Label.new()
-	sub.text = "DISTRICT ZERO   /   FREE ROAM"
-	sub.position = Vector2(32,51)
-	sub.add_theme_font_size_override("font_size",14)
+	sub.text = "SYDNEY  /  FREE ROAM" if using_sydney else "DISTRICT ZERO  /  FREE ROAM"
+	sub.position = Vector2(38,51)
+	sub.add_theme_font_size_override("font_size",12)
+	sub.add_theme_color_override("font_color",Color("c2cbd0"))
 	root.add_child(sub)
+	var stats_panel := ColorRect.new()
+	stats_panel.color = Color(0.012,0.024,0.035,0.86)
+	stats_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	stats_panel.offset_left = -318
+	stats_panel.offset_right = -22
+	stats_panel.offset_top = 18
+	stats_panel.offset_bottom = 91
+	stats_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(stats_panel)
 	hud = Label.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	hud.position = Vector2(-365,18)
-	hud.add_theme_font_size_override("font_size",19)
+	hud.offset_left = -300
+	hud.offset_right = -34
+	hud.offset_top = 24
+	hud.offset_bottom = 66
+	hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	hud.add_theme_font_size_override("font_size",15)
+	hud.add_theme_color_override("font_color",Color("f1f1e9"))
 	root.add_child(hud)
+	health_bar = ProgressBar.new()
+	health_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	health_bar.offset_left = -292
+	health_bar.offset_right = -34
+	health_bar.offset_top = 73
+	health_bar.offset_bottom = 81
+	health_bar.min_value = 0
+	health_bar.max_value = 100
+	health_bar.show_percentage = false
+	health_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var health_fill := StyleBoxFlat.new()
+	health_fill.bg_color = Color("d5b45e")
+	health_bar.add_theme_stylebox_override("fill",health_fill)
+	var health_track := StyleBoxFlat.new()
+	health_track.bg_color = Color("30383a")
+	health_bar.add_theme_stylebox_override("background",health_track)
+	root.add_child(health_bar)
 	var bottom := ColorRect.new()
-	bottom.color = Color(0.035,0.075,0.12,0.88)
+	bottom.color = Color(0.012,0.024,0.035,0.82)
 	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom.offset_top = -88
+	bottom.offset_top = -72
 	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(bottom)
 	status = Label.new()
 	status.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	status.offset_top = -76
-	status.offset_bottom = -47
+	status.offset_top = -64
+	status.offset_bottom = -38
 	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	status.add_theme_color_override("font_color",Color("ffcb52"))
-	status.add_theme_font_size_override("font_size",20)
+	status.add_theme_font_size_override("font_size",18)
 	root.add_child(status)
 	hint = Label.new()
 	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	hint.offset_top = -41
-	hint.offset_bottom = -10
+	hint.offset_top = -34
+	hint.offset_bottom = -8
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.add_theme_color_override("font_color",Color("d3d9d8"))
+	hint.add_theme_font_size_override("font_size",13)
 	root.add_child(hint)
+	if using_sydney:
+		minimap = MiniMap.new()
+		minimap.name = "WorldMiniMap"
+		minimap.player_ref = player
+		minimap.camera_rig = rig
+		minimap.roads = sydney_world.data.get("roads",[])
+		minimap.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+		minimap.offset_left = 22
+		minimap.offset_top = -198
+		minimap.offset_right = 190
+		minimap.offset_bottom = -22
+		minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(minimap)
 	cross = Label.new()
 	cross.text = "+"
-	cross.add_theme_font_size_override("font_size",28)
+	cross.add_theme_font_size_override("font_size",24)
+	cross.add_theme_color_override("font_color",Color("f4f2e9"))
 	cross.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	cross.position = Vector2(-10,-20)
 	root.add_child(cross)
@@ -179,6 +317,22 @@ func build_hud() -> void:
 	root.add_child(flash)
 
 func build_city() -> void:
+	build_environment()
+	if _sydney_requested():
+		var world := SydneyWorld.new()
+		if world.load_world():
+			sydney_world = world
+			using_sydney = true
+			add_child(world)
+		else:
+			push_warning("Sydney world failed to load (%s); using District Zero" % world.load_error)
+	if not using_sydney:
+		build_district_zero()
+
+func _sydney_requested() -> bool:
+	return "--sydney" in OS.get_cmdline_user_args() or OS.get_environment("SPLOOGE_SYDNEY") == "1"
+
+func build_environment() -> void:
 	var environment := WorldEnvironment.new()
 	var settings := Environment.new()
 	settings.background_mode = Environment.BG_SKY
@@ -202,6 +356,8 @@ func build_city() -> void:
 	sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 160
 	add_child(sun)
+
+func build_district_zero() -> void:
 	Art.box(self,Vector3(0,-0.55,0),Vector3(240,1,240),Color("487665"),true)
 	# Three generous 18 m avenues each way, enclosing four walkable blocks.
 	for axis in 2:
@@ -351,5 +507,43 @@ func sound(frequency: float, duration: float) -> void:
 	var audio := AudioStreamPlayer.new()
 	add_child(audio)
 	audio.stream = stream
+	audio.finished.connect(audio.queue_free)
+	audio.play()
+
+func gunshot(shotgun: bool = false) -> void:
+	const SAMPLE_RATE := 44100
+	var duration := 0.48 if shotgun else 0.34
+	var body_frequency := 64.0 if shotgun else 92.0
+	var body_decay := 11.0 if shotgun else 17.0
+	var sample_count := int(SAMPLE_RATE * duration)
+	var samples := PackedByteArray()
+	samples.resize(sample_count * 2)
+	var random := RandomNumberGenerator.new()
+	random.randomize()
+	var filtered_noise := 0.0
+	for index in sample_count:
+		var time := float(index) / SAMPLE_RATE
+		var noise := random.randf_range(-1.0,1.0)
+		filtered_noise = lerpf(filtered_noise,noise,0.48)
+		var crack := noise * exp(-time * 72.0)
+		var body_envelope := exp(-time * body_decay)
+		var bass := sin(TAU * (body_frequency - minf(time * 90.0,48.0)) * time)
+		var low_thump := bass * body_envelope
+		var tail := filtered_noise * exp(-time * 7.5)
+		var receiver_clack := sin(TAU * 740.0 * (time - 0.055)) * exp(-absf(time - 0.055) * 65.0)
+		var echo := sin(TAU * 125.0 * (time - 0.105)) * exp(-maxf(time - 0.105,0.0) * 12.0) if time >= 0.105 else 0.0
+		var value := crack * 0.72 + low_thump * 0.62 + tail * 0.14 + receiver_clack * 0.16 + echo * 0.11
+		samples.encode_s16(index * 2,int(clampf(value,-1.0,1.0) * 30000.0))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = SAMPLE_RATE
+	stream.data = samples
+	var audio := AudioStreamPlayer3D.new()
+	audio.stream = stream
+	audio.volume_db = 0.0 if shotgun else -5.0
+	audio.unit_size = 5.0
+	audio.max_distance = 75.0
+	audio.position = player.global_position + Vector3.UP * 1.4
+	add_child(audio)
 	audio.finished.connect(audio.queue_free)
 	audio.play()

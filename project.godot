@@ -1,8 +1,8 @@
 config_version=5
 
 [application]
-config/name="BOOMTOWN — District Zero"
-run/main_scene="res://scenes/district.tscn"
+config/name="Splooge"
+run/main_scene="res://scenes/main.tscn"
 
 [display]
 window/size/viewport_width=1280

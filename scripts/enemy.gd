@@ -1,6 +1,8 @@
 class_name BoomEnemy
 extends CharacterBody3D
 
+const GoreEffectsScript := preload("res://scripts/gore_effects.gd")
+
 var health: float = 100
 var cooldown: float = 0
 var respawn_time: float = 0
@@ -59,13 +61,24 @@ func _physics_process(dt: float) -> void:
 	move_and_slide()
 
 func take_damage(amount: float) -> void:
+	take_damage_at(amount,global_position + Vector3.UP,0.85,Vector3.FORWARD)
+
+func take_damage_at(
+	amount: float,
+	impact_position: Vector3,
+	impact_intensity: float = 1.0,
+	shot_direction: Vector3 = Vector3.FORWARD
+) -> void:
 	if health <= 0:
 		return
 	health = maxf(0,health-amount)
 	health_label.text = "GRUNT · %d" % health
+	GoreEffectsScript.spawn_hit_spray(get_parent(),impact_position,impact_intensity,shot_direction)
 	if health <= 0:
 		player.kills += 1
 		get_parent().message = "GRUNT DOWN · +100 reputation"
+		GoreEffectsScript.spawn_death_splatter(get_parent(),global_position + Vector3.UP * 0.25,1.5)
 		visible = false
 		collision_layer = 0
+		collision_mask = 0
 		respawn_time = 12

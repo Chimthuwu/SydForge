@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+; SYDNEY INNER WEST PLAYTEST — open this file and press F6 (Run Current Scene).
+; Root node uses scripts/sydney_inner_west_district.gd: the real game with the
+; Stage A CBD + Opera House + Harbour Bridge loaded first (unchanged), then the
+; Phase 6C Inner West district added beside it, with the player spawning on
+; King Street, Newtown. See docs/SYDNEY_INNER_WEST_PHASE6C.md.
+
+[ext_resource type="Script" path="res://scripts/sydney_inner_west_district.gd" id="1_inner_west"]
+
+[node name="SydneyInnerWestPlaytest" type="Node3D"]
+script = ExtResource("1_inner_west")

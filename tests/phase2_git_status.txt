@@ -1,0 +1,41 @@
+﻿ M AGENTS.md
+ M README.md
+ M docs/ARCHITECTURE.md
+ M docs/TEST_REPORT.md
+ M scripts/camera_rig.gd
+ M scripts/district.gd
+?? PITFALLS.md
+?? PLAY_SYDNEY.cmd
+?? STATE.md
+?? docs/BASELINE_VERIFICATION.md
+?? docs/GEOMETRY_CORRECTION.md
+?? docs/SYDNEY_ARCHITECTURE_PHASE2.md
+?? docs/SYDNEY_ASSET_COMPATIBILITY.md
+?? docs/SYDNEY_INTEGRATION.md
+?? docs/SYDNEY_TEST_REPORT.md
+?? sydney/
+?? tests/architecture_clearance.py
+?? tests/architecture_pilot.json
+?? tests/architecture_test.gd
+?? tests/architecture_visual.gd
+?? tests/combat.png.import
+?? tests/driving.png.import
+?? tests/extract_architecture.ps1
+?? tests/integration.gd.uid
+?? tests/overview.png.import
+?? tests/phase2_git_status.txt
+?? tests/refinements.gd.uid
+?? tests/street.png.import
+?? tests/sydney_circular_quay.png.import
+?? tests/sydney_concave_building.png.import
+?? tests/sydney_geometry_test.gd
+?? tests/sydney_geometry_test.gd.uid
+?? tests/sydney_junction.png.import
+?? tests/sydney_overview.png.import
+?? tests/sydney_road_bend.png.import
+?? tests/sydney_scene_test.gd
+?? tests/sydney_scene_test.gd.uid
+?? tests/sydney_street.png.import
+?? tests/sydney_visual.gd
+?? tests/sydney_visual.gd.uid
+?? tests/visual.gd.uid

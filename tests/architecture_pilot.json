@@ -1,0 +1,202 @@
+[
+	{
+		"areaM2": 158.4,
+		"building": "commercial",
+		"heightM": 17.0,
+		"heightSource": "estimated-footprint",
+		"id": "way/620819399",
+		"levels": null,
+		"name": null,
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				-114.2,
+				-505.1
+			],
+			[
+				-107.6,
+				-504.4
+			],
+			[
+				-105.3,
+				-528.2
+			],
+			[
+				-111.9,
+				-528.8
+			]
+		]
+	},
+	{
+		"areaM2": 393.0,
+		"building": "yes",
+		"heightM": 16.0,
+		"heightSource": "derived-levels",
+		"id": "way/448339172",
+		"levels": 5.0,
+		"name": "Australian Prudential Regulation Authority",
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				15.0,
+				-554.1
+			],
+			[
+				26.1,
+				-553.1
+			],
+			[
+				30.0,
+				-587.8
+			],
+			[
+				18.8,
+				-589.0
+			]
+		]
+	},
+	{
+		"areaM2": 1694.9,
+		"building": "commercial",
+		"heightM": 48.0,
+		"heightSource": "derived-levels",
+		"id": "way/335699128",
+		"levels": 15.0,
+		"name": "Landmark Centre",
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				-139.7,
+				-584.1
+			],
+			[
+				-137.9,
+				-540.7
+			],
+			[
+				-101.1,
+				-542.9
+			],
+			[
+				-97.4,
+				-582.9
+			],
+			[
+				-99.5,
+				-585.2
+			]
+		]
+	},
+	{
+		"areaM2": 411.6,
+		"building": "yes",
+		"heightM": 41.6,
+		"heightSource": "derived-levels",
+		"id": "way/386563353",
+		"levels": 13.0,
+		"name": "Paxton House",
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				58.6,
+				-640.2
+			],
+			[
+				89.8,
+				-636.4
+			],
+			[
+				90.8,
+				-649.5
+			],
+			[
+				59.9,
+				-653.4
+			]
+		]
+	},
+	{
+		"areaM2": 113.2,
+		"building": "yes",
+		"heightM": 9.6,
+		"heightSource": "derived-levels",
+		"id": "way/1176087505",
+		"levels": 3.0,
+		"name": null,
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				-243.4,
+				-557.8
+			],
+			[
+				-237.0,
+				-558.4
+			],
+			[
+				-238.6,
+				-576.0
+			],
+			[
+				-244.9,
+				-575.6
+			]
+		]
+	},
+	{
+		"areaM2": 210.0,
+		"building": "yes",
+		"heightM": 44.8,
+		"heightSource": "derived-levels",
+		"id": "way/547758509",
+		"levels": 14.0,
+		"name": null,
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				90.8,
+				-649.5
+			],
+			[
+				91.1,
+				-656.5
+			],
+			[
+				60.6,
+				-660.0
+			],
+			[
+				59.9,
+				-653.4
+			]
+		]
+	},
+	{
+		"areaM2": 1492.9,
+		"building": "commercial",
+		"heightM": 102.4,
+		"heightSource": "derived-levels",
+		"id": "way/173542968",
+		"levels": 32.0,
+		"name": "National Mutual Centre",
+		"provenance": "source: OSM footprint; height as labelled",
+		"ring": [
+			[
+				-215.6,
+				-254.5
+			],
+			[
+				-177.3,
+				-258.3
+			],
+			[
+				-181.2,
+				-296.9
+			],
+			[
+				-219.5,
+				-293.1
+			]
+		]
+	}
+]

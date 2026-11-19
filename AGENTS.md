@@ -5,7 +5,8 @@ The supplied user brief is the available specification; no prior finalized desig
 was present in the workspace. Do not invent claims about an unavailable design.
 Keep the first playable scoped to District Zero. Run the integration suite and
 scene startup after changing gameplay. Inspect a rendered capture for visual changes.
-All current assets are original procedural geometry; no external dependencies.
+District Zero assets are original procedural geometry. The opt-in Sydney pilot
+also uses eight CC0 Quaternius modules; see docs/SYDNEY_ARCHITECTURE_PHASE2.md.
 
 Validation: bundled Godot executable, `--headless --path . --script res://tests/integration.gd`.
 Do not add traffic, missions, or city expansion before stabilizing this foundation.

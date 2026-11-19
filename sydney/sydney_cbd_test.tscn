@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+; SYDNEY CBD PLAYTEST (Phase 6B) — open this file and press F6.
+; Root node uses scripts/sydney_cbd_district.gd, the real game with the expanded
+; Stage B world. District Zero (F5) and the Stage A scenes are untouched.
+; See docs/SYDNEY_CBD_EXPANSION_PHASE6B.md.
+
+[ext_resource type="Script" path="res://scripts/sydney_cbd_district.gd" id="1_cbd"]
+
+[node name="SydneyCbdPlaytest" type="Node3D"]
+script = ExtResource("1_cbd")

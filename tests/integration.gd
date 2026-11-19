@@ -96,7 +96,9 @@ func run() -> void:
 	# Pistol ray: park enemy in an open avenue in line with camera centre.
 	p.position = Vector3(0,0.2,40)
 	p.velocity = Vector3.ZERO
-	foe.position = Vector3(0.8,0.2,25)
+	# The production camera is now first person rather than offset to the right
+	# of the character; keep this target centred on the reticle.
+	foe.position = Vector3(0,0.2,25)
 	foe.health = 100
 	world.rig.yaw = 0
 	world.rig.pitch = 0

@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+; SYDNEY OPERA HOUSE PLAYTEST — open this file and press F6 (Run Current Scene).
+; Same world/player/camera/HUD as sydney_test.tscn; starts on the Opera House
+; forecourt facing the steps. See docs/SYDNEY_PLAYTEST.md.
+
+[ext_resource type="Script" path="res://scripts/sydney_opera_district.gd" id="1_opera"]
+
+[node name="SydneyOperaPlaytest" type="Node3D"]
+script = ExtResource("1_opera")
