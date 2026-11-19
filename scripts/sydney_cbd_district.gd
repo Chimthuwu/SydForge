@@ -60,6 +60,14 @@ func build_environment() -> void:
 		if environment != null:
 			environment.ambient_light_energy = 0.62
 			environment.ambient_light_color = Color("cfe0ea")
+			# Distance haze gives the harbour and the skyline depth instead of a
+			# crisp toy-town horizon. Very light by day, stronger at night.
+			environment.fog_enabled = true
+			environment.fog_light_color = Color("7d8b94")
+			environment.fog_light_energy = 0.7
+			environment.fog_density = 0.0011
+			environment.fog_aerial_perspective = 0.35
+			environment.fog_sky_affect = 0.15
 	for node in find_children("*", "DirectionalLight3D", true, false):
 		var sun := node as DirectionalLight3D
 		sun.directional_shadow_max_distance = 320.0
@@ -70,7 +78,7 @@ func _playtest_spawn() -> Vector3:
 	var bridge := _harbour_bridge()
 	if bridge != null and bridge.route.size() > 5:
 		var index := _opera_view_route_index(bridge)
-		return bridge.route[index] + bridge.route_east[index] * 11.0 + Vector3.UP * 0.4
+		return bridge.route[index] + bridge.route_east[index] * 7.5 + Vector3.UP * 0.4
 	return super()
 
 
@@ -142,17 +150,19 @@ func _ready() -> void:
 	if not using_sydney or player == null:
 		return
 	var bridge := _harbour_bridge()
-	if bridge == null or bridge.route.size() < 6 or vehicles.is_empty():
-		push_warning("Sydney main: Harbour Bridge route unavailable; keeping exported vehicle spawns")
-		return
-	# Keep one car at the southern entrance and put the sports car beside the
-	# Opera-facing overlook. The other two retain their CBD export spawns.
-	var overlook_index := _opera_view_route_index(bridge)
-	_place_vehicle_at_bridge(vehicles[0], bridge, 3, -7.5)
-	if vehicles.size() > 1:
+	if bridge != null and bridge.route.size() >= 6 and vehicles.size() > 1:
+		# Canonical opening: the player starts in the sports car on the bridge
+		# overlook, facing along the deck in the late-afternoon light.
+		var overlook_index := _opera_view_route_index(bridge)
 		_place_vehicle_at_bridge(vehicles[1], bridge, overlook_index, 7.5)
-	
+		vehicles[1].enter(player)
+		player.spawn = vehicles[1].global_position
+		rig.yaw = vehicles[1].rotation.y
+		message = "SYDNEY HARBOUR BRIDGE · drive into the city"
 	_initialize_living_ecosystem()
+	var time_mgr := get_node_or_null("WorldTimeManager")
+	if time_mgr != null:
+		time_mgr.set_time(11.0)
 
 
 func _initialize_living_ecosystem() -> void:
@@ -165,7 +175,7 @@ func _initialize_living_ecosystem() -> void:
 	var lights_mgr = CityLightsManagerScript.new()
 	lights_mgr.name = "CityLightsManager"
 	add_child(lights_mgr)
-	lights_mgr.setup(cbd_world)
+	lights_mgr.setup(cbd_world, player, vehicles)
 	
 	# 3. Traffic Manager (varied vehicle classes, buses, trucks, utes, motorbikes)
 	var traffic_mgr = TrafficManagerScript.new()
@@ -184,4 +194,3 @@ func _initialize_living_ecosystem() -> void:
 	wild_mgr.name = "WildlifeManager"
 	add_child(wild_mgr)
 	wild_mgr.setup(cbd_world, player)
-

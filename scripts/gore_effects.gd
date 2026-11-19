@@ -4,6 +4,80 @@ const DARK_BLOOD := Color("650812")
 const FRESH_BLOOD := Color("bd1024")
 const BRIGHT_BLOOD := Color("ec2637")
 const FEATHER := Color("e9e6db")
+const SKIN := Color("d9a079")
+const CLOTH := Color("3d4850")
+
+## Physics-driven body destruction. Limbs are separate RigidBody3D chunks with
+## real mass and momentum, so a vehicle strike throws body parts instead of
+## dissolving the character into a puff of red spheres.
+static func spawn_body_destruction(
+	parent: Node3D,
+	position: Vector3,
+	velocity: Vector3,
+	skin_color: Color = SKIN,
+	cloth_color: Color = CLOTH,
+	feathers: bool = false
+) -> void:
+	if not is_instance_valid(parent):
+		return
+	var root := Node3D.new()
+	root.name = "BodyDebris"
+	parent.add_child(root)
+	root.global_position = position
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(Time.get_ticks_usec())
+	var parts := [
+		{"size": Vector3(0.22, 0.26, 0.22), "color": skin_color, "offset": Vector3(0.0, 0.9, 0.0)},
+		{"size": Vector3(0.42, 0.5, 0.24), "color": cloth_color, "offset": Vector3(0.0, 0.25, 0.0)},
+		{"size": Vector3(0.16, 0.7, 0.18), "color": cloth_color, "offset": Vector3(-0.22, 0.5, 0.0)},
+		{"size": Vector3(0.16, 0.7, 0.18), "color": cloth_color, "offset": Vector3(0.22, 0.5, 0.0)},
+		{"size": Vector3(0.14, 0.65, 0.16), "color": skin_color, "offset": Vector3(-0.34, 0.85, 0.0)},
+		{"size": Vector3(0.14, 0.65, 0.16), "color": skin_color, "offset": Vector3(0.34, 0.85, 0.0)},
+	]
+	if feathers:
+		for part: Dictionary in parts:
+			part["color"] = FEATHER
+		for index in 10:
+			parts.append({
+				"size": Vector3(0.05, 0.02, 0.22), "color": FEATHER,
+				"offset": Vector3(rng.randf_range(-0.2, 0.2), rng.randf_range(0.2, 0.9), rng.randf_range(-0.2, 0.2))
+			})
+	for spec: Dictionary in parts:
+		var chunk := RigidBody3D.new()
+		chunk.name = "BodyChunk"
+		var box := BoxMesh.new()
+		box.size = spec["size"]
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = box
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = spec["color"]
+		mat.roughness = 0.85
+		mesh.material_override = mat
+		chunk.add_child(mesh)
+		var shape := CollisionShape3D.new()
+		var body_shape := BoxShape3D.new()
+		body_shape.size = spec["size"]
+		shape.shape = body_shape
+		chunk.add_child(shape)
+		chunk.mass = 0.8 if spec["size"].y < 0.3 else 1.8
+		root.add_child(chunk)
+		chunk.global_position = root.global_position + spec["offset"]
+		var launch := velocity * rng.randf_range(0.35, 0.85)
+		launch += Vector3(
+			rng.randf_range(-3.5, 3.5),
+			rng.randf_range(2.0, 6.5),
+			rng.randf_range(-3.5, 3.5)
+		)
+		chunk.linear_velocity = launch
+		chunk.angular_velocity = Vector3(
+			rng.randf_range(-9.0, 9.0),
+			rng.randf_range(-9.0, 9.0),
+			rng.randf_range(-9.0, 9.0)
+		)
+	_spawn_burst(root, position, 2.2, 26, false, true)
+	_spawn_pool(parent, position, 1.8)
+	var cleanup := parent.get_tree().create_timer(9.0)
+	cleanup.timeout.connect(root.queue_free)
 
 
 static func spawn_hit_spray(

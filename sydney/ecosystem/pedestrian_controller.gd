@@ -24,6 +24,13 @@ var right_arm: Node3D
 var walk_anim_time: float = 0.0
 var health: float = 100.0
 var is_dead: bool = false
+var _skin_color: Color = Color("d9a079")
+var _shirt_color: Color = Color("3d4850")
+var _pant_color: Color = Color("263238")
+
+## Distance LOD for the 50 peaceful walkers; see traffic controller.
+var _player: Node3D
+var _sim_accum: float = 0.0
 
 func _ready() -> void:
 	add_to_group("pedestrians")
@@ -68,6 +75,9 @@ func _build_visuals() -> void:
 	var shirt_col: Color = shirt_colors[randi() % shirt_colors.size()]
 	var pant_col: Color = pant_colors[randi() % pant_colors.size()]
 	var hair_col: Color = hair_colors[randi() % hair_colors.size()]
+	_skin_color = skin_col
+	_shirt_color = shirt_col
+	_pant_color = pant_col
 	
 	# Torso
 	Art.box(body_root, Vector3(0, 1.05, 0), Vector3(0.42, 0.55, 0.22), shirt_col)
@@ -115,12 +125,28 @@ func _build_visuals() -> void:
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+	var step := delta
+	if _player == null:
+		_player = get_tree().get_first_node_in_group("player") as Node3D
+	if _player != null:
+		var interval := 0.0
+		var distance := global_position.distance_to(_player.global_position)
+		if distance > 70.0:
+			interval = 1.0 / 15.0
+		elif distance > 30.0:
+			interval = 1.0 / 30.0
+		if interval > 0.0:
+			_sim_accum += delta
+			if _sim_accum < interval:
+				return
+			step = _sim_accum
+			_sim_accum = 0.0
 	if is_waiting:
-		wait_timer -= delta
+		wait_timer -= step
 		if wait_timer <= 0.0:
 			is_waiting = false
 			_pick_next_target()
-		_animate_walking(0.0, delta)
+		_animate_walking(0.0, step)
 		return
 	
 	if not (target_node_id in graph_nodes):
@@ -144,14 +170,15 @@ func _physics_process(delta: float) -> void:
 		return
 	
 	var fwd := diff.normalized()
-	velocity.x = fwd.x * walk_speed
-	velocity.z = fwd.z * walk_speed
-	velocity.y -= 9.8 * delta
+	var step_scale := step / maxf(get_physics_process_delta_time(), 0.0001)
+	velocity.x = fwd.x * walk_speed * step_scale
+	velocity.z = fwd.z * walk_speed * step_scale
+	velocity.y -= 9.8 * step
 	
 	rotation.y = atan2(-fwd.x, -fwd.z)
 	move_and_slide()
 	
-	_animate_walking(walk_speed, delta)
+	_animate_walking(walk_speed, step)
 
 func take_damage_at(
 	amount: float,
@@ -165,6 +192,24 @@ func take_damage_at(
 	GoreEffectsScript.spawn_hit_spray(get_parent(),impact_position,impact_intensity,shot_direction)
 	if health > 0.0:
 		return
+	_die(impact_intensity * shot_direction.normalized() * 3.0)
+
+
+func hit_by_vehicle(impact_speed: float, source: Node3D = null) -> bool:
+	if is_dead or impact_speed < 2.0:
+		return false
+	var vehicle_velocity := Vector3.ZERO
+	if source != null and "velocity" in source:
+		vehicle_velocity = source.get("velocity")
+	if vehicle_velocity.length() < 2.0:
+		vehicle_velocity = Vector3.FORWARD * impact_speed
+	_die(vehicle_velocity * clampf(impact_speed / 12.0, 0.8, 2.4))
+	return true
+
+
+func _die(launch_velocity: Vector3) -> void:
+	if is_dead:
+		return
 	is_dead = true
 	set_physics_process(false)
 	velocity = Vector3.ZERO
@@ -174,8 +219,10 @@ func take_damage_at(
 		shape.set_deferred("disabled",true)
 	if body_root != null:
 		body_root.visible = false
-	GoreEffectsScript.spawn_death_splatter(get_parent(),global_position + Vector3.UP * 0.2,1.5)
-	var cleanup := get_tree().create_timer(2.5)
+	GoreEffectsScript.spawn_body_destruction(
+		get_parent(), global_position, launch_velocity, _skin_color, _shirt_color
+	)
+	var cleanup := get_tree().create_timer(1.0)
 	cleanup.timeout.connect(queue_free)
 
 func _animate_walking(spd: float, delta: float) -> void:

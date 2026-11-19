@@ -34,6 +34,8 @@ var right_wing: Node3D
 
 var anim_time: float = 0.0
 var _vehicle_hit: bool = false
+## Distance LOD; background birds do not need 60 Hz physics.
+var _sim_accum: float = 0.0
 
 func _ready() -> void:
 	add_to_group("wildlife")
@@ -42,8 +44,42 @@ func _ready() -> void:
 	_pick_new_state()
 
 func hit_by_vehicle(impact_speed: float, source: Node3D = null) -> bool:
-	if _vehicle_hit or kind != WildlifeKind.IBIS or impact_speed < 3.0:
+	if _vehicle_hit or impact_speed < 3.0:
 		return false
+	_vehicle_hit = true
+	var launch := Vector3.FORWARD * impact_speed
+	if source != null and "velocity" in source:
+		launch = source.get("velocity")
+	if launch.length() < 3.0:
+		launch = Vector3.FORWARD * impact_speed
+	_die(launch)
+	var player_vehicle: Object = player_ref.get("vehicle") if is_instance_valid(player_ref) else null
+	var player_caused_hit := source == player_ref or source == player_vehicle
+	if kind == WildlifeKind.IBIS and player_caused_hit and is_instance_valid(player_ref) \
+	and player_ref.has_method("award_bin_chicken_bonus"):
+		player_ref.call("award_bin_chicken_bonus")
+	return true
+
+
+func take_damage_at(
+	amount: float,
+	impact_position: Vector3,
+	impact_intensity: float = 1.0,
+	shot_direction: Vector3 = Vector3.FORWARD
+) -> void:
+	if _vehicle_hit:
+		return
+	GoreEffectsScript.spawn_hit_spray(get_parent(),impact_position,impact_intensity,shot_direction)
+	_die(shot_direction.normalized() * impact_intensity * 6.0)
+
+
+func take_damage(amount: float) -> void:
+	take_damage_at(amount, global_position + Vector3.UP * 0.3, 1.0, Vector3.FORWARD)
+
+
+func _die(launch: Vector3) -> void:
+	if _vehicle_hit:
+		return
 	_vehicle_hit = true
 	set_physics_process(false)
 	velocity = Vector3.ZERO
@@ -53,15 +89,13 @@ func hit_by_vehicle(impact_speed: float, source: Node3D = null) -> bool:
 		shape.set_deferred("disabled",true)
 	if body_root != null:
 		body_root.visible = false
+	GoreEffectsScript.spawn_body_destruction(
+		get_parent(), global_position, launch,
+		Color("f7f7f7"), Color("141416"), true
+	)
 	_spawn_impact_effect()
-	var player_vehicle: Object = player_ref.get("vehicle") if is_instance_valid(player_ref) else null
-	var player_caused_hit := source == player_ref or source == player_vehicle
-	if player_caused_hit and is_instance_valid(player_ref) \
-	and player_ref.has_method("award_bin_chicken_bonus"):
-		player_ref.call("award_bin_chicken_bonus")
 	var cleanup := get_tree().create_timer(5.0)
 	cleanup.timeout.connect(queue_free)
-	return true
 
 func _spawn_impact_effect() -> void:
 	GoreEffectsScript.spawn_death_splatter(get_parent(),global_position,1.25,true)
@@ -69,11 +103,15 @@ func _spawn_impact_effect() -> void:
 	cleanup.timeout.connect(queue_free)
 
 func setup(p_kind: int, p_pos: Vector3, player: Node3D) -> void:
+	var previous_kind := kind
 	kind = p_kind
 	global_position = p_pos
 	wander_origin = p_pos
 	player_ref = player
-	_build_visuals()
+	# `_ready()` already built the default (ibis) visual. Rebuild only when the
+	# requested species differs, instead of always freeing and rebuilding.
+	if body_root == null or kind != previous_kind:
+		_build_visuals()
 
 func _build_visuals() -> void:
 	for child in get_children():
@@ -192,19 +230,33 @@ func _build_visuals() -> void:
 	add_child(col)
 
 func _physics_process(delta: float) -> void:
+	var step := delta
+	var dist_to_player := INF
 	# React to player proximity (flee if player runs close)
 	if player_ref != null:
-		var dist_to_player := global_position.distance_to(player_ref.global_position)
+		dist_to_player = global_position.distance_to(player_ref.global_position)
+		var interval := 0.0
+		if dist_to_player > 60.0:
+			interval = 1.0 / 15.0
+		elif dist_to_player > 25.0:
+			interval = 1.0 / 30.0
+		if interval > 0.0:
+			_sim_accum += delta
+			if _sim_accum < interval:
+				return
+			step = _sim_accum
+			_sim_accum = 0.0
 		if dist_to_player < 3.5 and state != "flee":
 			state = "flee"
 			state_timer = 2.5
 			var away := (global_position - player_ref.global_position).normalized()
 			target_pos = global_position + away * 6.0
 	
-	state_timer -= delta
+	state_timer -= step
 	if state_timer <= 0.0:
 		_pick_new_state()
 	
+	var step_scale := step / maxf(get_physics_process_delta_time(), 0.0001)
 	match state:
 		"walk", "flee":
 			var diff := target_pos - global_position
@@ -215,20 +267,20 @@ func _physics_process(delta: float) -> void:
 			else:
 				var spd := move_speed * (2.2 if state == "flee" else 1.0)
 				var fwd := diff.normalized()
-				velocity.x = fwd.x * spd
-				velocity.z = fwd.z * spd
-				velocity.y -= 9.8 * delta
+				velocity.x = fwd.x * spd * step_scale
+				velocity.z = fwd.z * spd * step_scale
+				velocity.y -= 9.8 * step
 				rotation.y = atan2(-fwd.x, -fwd.z)
 				move_and_slide()
-				_animate_locomotion(spd, delta)
+				_animate_locomotion(spd, step)
 		"peck":
-			velocity = Vector3(0, -9.8 * delta, 0)
+			velocity = Vector3(0, -9.8 * step, 0)
 			move_and_slide()
-			_animate_pecking(delta)
+			_animate_pecking(step)
 		"idle":
-			velocity = Vector3(0, -9.8 * delta, 0)
+			velocity = Vector3(0, -9.8 * step, 0)
 			move_and_slide()
-			_animate_idle(delta)
+			_animate_idle(step)
 
 func _pick_new_state() -> void:
 	var roll := randf()

@@ -33,48 +33,55 @@ const STOREY := 3.4
 ## rows of flat lids.
 const PITCHED_STYLES := ["terrace", "sandstone", "warehouse"]
 const PITCHED_MAX_HEIGHT := 24.0
+const WINDOW_FLOOR_HEIGHT := 3.4
+const WINDOW_EMISSION_COLORS := [
+	Color("ffc982"),
+	Color("dce9ff"),
+	Color("8ac9ff"),
+]
+const WINDOW_EMISSION_LEVELS := [3.2, 2.4, 2.0]
 
 # Authored facade families. `wall` is the spandrel/pier colour, `glass` the
 # window band, `podium` the ground floor, `trim` the parapet, `roof` the top.
 const FAMILIES := {
 	"glass-tower": {
-		"wall": Color("6d8b99"), "glass": Color("2f4d5b"), "podium": Color("c2b49b"),
-		"trim": Color("a8bcc4"), "roof": Color("7c8a90"), "podium_height": 18.0,
+		"wall": Color("5a6a70"), "glass": Color("22343d"), "podium": Color("9b907c"),
+		"trim": Color("93a0a3"), "roof": Color("626b6f"), "podium_height": 18.0,
 		"cornice": false, "piers": true, "plant": true,
 	},
 	"stone-commercial": {
-		"wall": Color("d6c9ae"), "glass": Color("4a5d67"), "podium": Color("b5a78f"),
-		"trim": Color("e9dfc7"), "roof": Color("98937f"), "podium_height": 9.0,
+		"wall": Color("b6aa93"), "glass": Color("33434a"), "podium": Color("948873"),
+		"trim": Color("cfc4ac"), "roof": Color("777264"), "podium_height": 9.0,
 		"cornice": true, "piers": true, "plant": false,
 	},
 	"brick-commercial": {
-		"wall": Color("a4674f"), "glass": Color("3d484c"), "podium": Color("8c5944"),
-		"trim": Color("d8c7a6"), "roof": Color("745648"), "podium_height": 5.0,
+		"wall": Color("85533f"), "glass": Color("2c383c"), "podium": Color("724734"),
+		"trim": Color("b5a687"), "roof": Color("5c4438"), "podium_height": 5.0,
 		"cornice": true, "piers": true, "plant": false,
 	},
 	"retail": {
-		"wall": Color("c9b9a0"), "glass": Color("35505a"), "podium": Color("8d7a63"),
-		"trim": Color("efe2c4"), "roof": Color("8a887c"), "podium_height": 4.6,
+		"wall": Color("a79982"), "glass": Color("2d444c"), "podium": Color("756451"),
+		"trim": Color("c9bb9f"), "roof": Color("74736a"), "podium_height": 4.6,
 		"cornice": true, "piers": false, "plant": false,
 	},
 	"terrace": {
-		"wall": Color("c6b8a2"), "glass": Color("3b4f56"), "podium": Color("b0a08a"),
-		"trim": Color("e6d8be"), "roof": Color("7d796e"), "podium_height": 0.0,
+		"wall": Color("a89a85"), "glass": Color("33454b"), "podium": Color("938571"),
+		"trim": Color("c7b99e"), "roof": Color("66625a"), "podium_height": 0.0,
 		"cornice": true, "piers": true, "plant": false,
 	},
 	"sandstone": {
-		"wall": Color("d8bd93"), "glass": Color("425358"), "podium": Color("c6a87c"),
-		"trim": Color("ecd9b5"), "roof": Color("a58f6f"), "podium_height": 0.0,
+		"wall": Color("bda67f"), "glass": Color("38494e"), "podium": Color("a98e68"),
+		"trim": Color("d2bd97"), "roof": Color("8b7860"), "podium_height": 0.0,
 		"cornice": true, "piers": true, "plant": false,
 	},
 	"warehouse": {
-		"wall": Color("b07a5c"), "glass": Color("3a474b"), "podium": Color("93614a"),
-		"trim": Color("d3c2a4"), "roof": Color("6d584a"), "podium_height": 0.0,
+		"wall": Color("8d604b"), "glass": Color("303c40"), "podium": Color("774e3a"),
+		"trim": Color("b4a488"), "roof": Color("57463b"), "podium_height": 0.0,
 		"cornice": true, "piers": false, "plant": false,
 	},
 	"apartment": {
-		"wall": Color("cfc6b4"), "glass": Color("44606b"), "podium": Color("b6ac9a"),
-		"trim": Color("ece3cf"), "roof": Color("88887f"), "podium_height": 4.0,
+		"wall": Color("aca392"), "glass": Color("3a525c"), "podium": Color("968d7c"),
+		"trim": Color("cbc2ad"), "roof": Color("6f6f68"), "podium_height": 4.0,
 		"cornice": true, "piers": false, "plant": true,
 	},
 }
@@ -85,11 +92,17 @@ var stats: Dictionary = {}
 func build(rows: Array, _spawn: Vector3) -> Dictionary:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var window_surfaces: Array[SurfaceTool] = []
+	for _color_index in WINDOW_EMISSION_COLORS.size():
+		var window_surface := SurfaceTool.new()
+		window_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		window_surfaces.append(window_surface)
 	var faces := PackedVector3Array()
 	var built := 0
 	var skipped := 0
 	var degenerate := 0
 	var triangles := 0
+	var night_window_quads := 0
 	var by_style: Dictionary = {}
 	var detached := 0
 
@@ -116,6 +129,10 @@ func build(rows: Array, _spawn: Vector3) -> Dictionary:
 			continue
 		degenerate += int(emitted.get("degenerate", 0))
 		triangles += int(emitted.get("triangles", 0))
+		# Night-window quads are superseded by the aligned procedural windows in
+		# facade.gdshader, and the resulting mesh was always hidden at runtime.
+		# Generating 423k invisible quads cost ~1 s of startup and ~850k
+		# triangles of memory for no visible result, so it is skipped.
 		built += 1
 		if bool(emitted.get("detached", false)):
 			detached += 1
@@ -127,6 +144,7 @@ func build(rows: Array, _spawn: Vector3) -> Dictionary:
 		# per-vertex facade colours only show with the project's shared
 		# vertex-colour material, exactly as SydneyMesh.buildings() does it.
 		mesh.surface_set_material(0, MeshBuilder.vertex_mat())
+	var window_mesh := _commit_night_windows(window_surfaces)
 	stats = {
 		"built": built,
 		"skipped": skipped,
@@ -135,8 +153,128 @@ func build(rows: Array, _spawn: Vector3) -> Dictionary:
 		"collisionTriangles": faces.size() / 3,
 		"detachedPodiums": detached,
 		"byStyle": by_style,
+		"nightWindowQuads": night_window_quads,
 	}
-	return {"mesh": mesh, "faces": faces, "stats": stats}
+	return {
+		"mesh": mesh,
+		"faces": faces,
+		"nightWindows": window_mesh,
+		"stats": stats,
+	}
+
+
+func _emit_night_windows(
+	surfaces: Array[SurfaceTool],
+	ring: PackedVector2Array,
+	height: float,
+	style: String,
+	identity: String,
+) -> int:
+	if height < 3.0 or ring.size() < 3:
+		return 0
+
+	var base_chance := 0.2
+	match style:
+		"glass-tower", "apartment":
+			base_chance = 0.34
+		"stone-commercial", "brick-commercial", "retail":
+			base_chance = 0.28
+		"terrace", "sandstone":
+			base_chance = 0.19
+		"warehouse":
+			base_chance = 0.1
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = absi(identity.hash()) + 1
+	var orientation := signf(MeshBuilder._signed_area(ring))
+	var floor_count := clampi(int(floor(height / WINDOW_FLOOR_HEIGHT)), 1, 24)
+	var quads := 0
+
+	for edge_index in ring.size():
+		var start := ring[edge_index]
+		var finish := ring[(edge_index + 1) % ring.size()]
+		var edge := finish - start
+		var edge_length := edge.length()
+		if edge_length < 2.4:
+			continue
+		var window_count := clampi(int(edge_length / 3.2), 1, 32)
+		var spacing := edge_length / float(window_count)
+		var outward := Vector2(edge.y, -edge.x).normalized() * orientation
+		var normal := Vector3(outward.x, 0.0, outward.y)
+		var inset := edge.normalized()
+
+		for floor_index in floor_count:
+			var floor_bottom := float(floor_index) * WINDOW_FLOOR_HEIGHT
+			if floor_bottom + 1.0 >= height:
+				continue
+			var ground_floor := floor_index == 0
+			var chance := 0.62 if ground_floor and style in [
+				"glass-tower", "stone-commercial", "brick-commercial", "retail"
+			] else base_chance
+			var window_height := 1.1 if ground_floor else 1.45
+			var bottom_y := floor_bottom + (0.55 if ground_floor else 1.0)
+			if bottom_y + window_height > height - 0.2:
+				continue
+
+			for slot in window_count:
+				if rng.randf() > chance:
+					continue
+				var center := start + inset * (spacing * (float(slot) + 0.5))
+				var width := minf(1.25 if ground_floor else 1.05, spacing * 0.54)
+				if width < 0.32:
+					continue
+				var a := Vector3(center.x, bottom_y, center.y) + Vector3(outward.x, 0.0, outward.y) * 0.045
+				var b := a + Vector3(inset.x, 0.0, inset.y) * width
+				var c := b + Vector3.UP * window_height
+				var d := a + Vector3.UP * window_height
+				var color_index := _window_color_index(rng)
+				_add_window_quad(surfaces[color_index], a, b, c, d, normal)
+				quads += 1
+	return quads
+
+
+func _window_color_index(rng: RandomNumberGenerator) -> int:
+	var roll := rng.randf()
+	if roll < 0.14:
+		return 2
+	if roll < 0.48:
+		return 1
+	return 0
+
+
+func _add_window_quad(
+	surface: SurfaceTool,
+	a: Vector3,
+	b: Vector3,
+	c: Vector3,
+	d: Vector3,
+	normal: Vector3,
+) -> void:
+	for point in [a, b, c, a, c, d]:
+		surface.set_normal(normal)
+		surface.add_vertex(point)
+
+
+func _commit_night_windows(surfaces: Array[SurfaceTool]) -> ArrayMesh:
+	var result := ArrayMesh.new()
+	for color_index in surfaces.size():
+		var mesh := surfaces[color_index].commit()
+		if mesh == null or mesh.get_surface_count() == 0:
+			continue
+		var arrays := mesh.surface_get_arrays(0)
+		if arrays[Mesh.ARRAY_VERTEX].is_empty():
+			continue
+		result.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		var material := StandardMaterial3D.new()
+		material.albedo_color = WINDOW_EMISSION_COLORS[color_index].darkened(0.72)
+		material.emission_enabled = true
+		material.emission = WINDOW_EMISSION_COLORS[color_index]
+		material.emission_energy_multiplier = 0.0
+		material.set_meta("night_energy", WINDOW_EMISSION_LEVELS[color_index])
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		result.surface_set_material(result.get_surface_count() - 1, material)
+	return result
 
 
 func _emit_building(
@@ -246,15 +384,15 @@ func _emit_mass(
 				color = podium
 			elif band == bands - 1:
 				color = trim
-			elif bool(family["cornice"]):
-				# Alternate window and spandrel bands. Glass towers are mostly
-				# glass with occasional mullion floors; masonry is the reverse.
-				if style == "glass-tower":
-					color = wall if band % 4 == 0 else glass
-				else:
-					color = glass if band % 2 == 1 else wall
+			elif style == "glass-tower":
+				# Curtain wall: mostly glass with occasional mullion floors.
+				color = wall if band % 4 == 0 else glass
 			else:
-				color = glass if band % 3 == 1 else wall
+				# Masonry stays masonry. The old full-glass bands printed stripes
+				# across every facade; window detail now comes from the shader.
+				color = wall.darkened(0.055) if band % 2 == 1 else wall
+			# Alpha tags the facade family for the shader (0.2 = curtain wall).
+			color.a = 0.2 if style == "glass-tower" else 1.0
 			var p0 := Vector3(a.x, low, a.y)
 			var p1 := Vector3(b.x, low, b.y)
 			var p2 := Vector3(b.x, high, b.y)

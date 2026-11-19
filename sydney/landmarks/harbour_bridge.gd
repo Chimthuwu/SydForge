@@ -311,3 +311,54 @@ func _build_site() -> void:
 	local_node.name = "MilsonsStreets"
 	local_node.mesh = local_mesh
 	add_child(local_node)
+	_build_southern_city_connector()
+
+
+## The bridge deck ends at the mapped Bradfield tie-in while the exported city
+## road mesh begins slightly further south. Bridge that seam with a short,
+## collision-backed asphalt ribbon so the carriageway never vanishes mid-drive.
+func _build_southern_city_connector() -> void:
+	if route.size() < 4:
+		return
+	var last: Vector3 = route[0]
+	var before: Vector3 = route[1]
+	var direction := (last - before).normalized()
+	direction.y = 0.0
+	if direction.length_squared() < 0.1:
+		return
+	var connector_length := 190.0
+	var path: Array = []
+	for index in 9:
+		var point := last + direction * (connector_length * float(index) / 8.0)
+		point.y = last.y
+		path.append(Vector2(point.x, point.z))
+	var paths: Array = [path]
+	var widths: Array = [24.0]
+	var surface := SydneyMesh.flat_paths(paths, widths, 0.06, Color("34383c"))
+	var instance := MeshInstance3D.new()
+	instance.name = "SouthernCityConnector"
+	instance.mesh = surface
+	add_child(instance)
+	# Flat collision pad matches the exported city's flat ground; the bridge's
+	# own concave body carries the elevated section up to the tie-in.
+	var body := StaticBody3D.new()
+	body.name = "SouthernCityConnectorCollision"
+	add_child(body)
+	for index in range(path.size() - 1):
+		var a: Vector2 = path[index]
+		var b: Vector2 = path[index + 1]
+		var segment := b - a
+		var segment_length := segment.length()
+		if segment_length < 0.01:
+			continue
+		var center := (a + b) * 0.5
+		var collider := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(24.0, 0.12, segment_length)
+		collider.shape = box
+		collider.transform = Transform3D(
+			Basis(Vector3(segment.x / segment_length, 0.0, segment.y / segment_length), Vector3.UP,
+				Vector3(-segment.y / segment_length, 0.0, segment.x / segment_length)),
+			Vector3(center.x, last.y - 0.06, center.y)
+		)
+		body.add_child(collider)

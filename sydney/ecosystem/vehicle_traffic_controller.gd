@@ -24,10 +24,17 @@ var wheels: Array[MeshInstance3D] = []
 var headlights: Array[MeshInstance3D] = []
 var taillights: Array[MeshInstance3D] = []
 var spot_light: SpotLight3D
+var rear_light: OmniLight3D
+var headlight_materials: Array[StandardMaterial3D] = []
+var taillight_materials: Array[StandardMaterial3D] = []
 
 var is_braking: bool = false
 var is_night: bool = false
+var lighting_factor: float = 0.0
+var _light_distance_timer: float = 0.0
 var collision_shape: CollisionShape3D
+var engine_audio_system: EngineAudio
+var audio_focus: bool = false
 var driver: BoomPlayer
 var vehicle_name: String = "Sydney traffic"
 var health: float = 100.0
@@ -45,6 +52,13 @@ var speed: float:
 
 # Raycast forward clearance check
 var clearance_ray: RayCast3D
+
+## Distance LOD: full rate near the player, 30/15 Hz further out. Background
+## actors are the dominant CPU cost and 130 of them at 60 Hz exceed the frame
+## budget before rendering starts.
+var _player: Node3D
+var _sim_accum: float = 0.0
+var _audio_timer: float = 0.0
 
 func _ready() -> void:
 	add_to_group("traffic_vehicles")
@@ -68,15 +82,17 @@ func setup_route(points: Array[Vector3], offset: float, forward: bool) -> void:
 
 func _setup_vehicle() -> void:
 	# Build visuals
+	# Restrained, real-world Sydney traffic palette: faded reds, fleet whites,
+	# charcoal, steel blue and a dusty gold. No primary-colour toy cars.
 	var palette := [
-		Color("ef5350"), Color("42a5f5"), Color("66bb6a"), Color("ffa726"),
-		Color("ab47bc"), Color("eceff1"), Color("263238"), Color("78909c")
+		Color("8a3b35"), Color("345064"), Color("4c5a4c"), Color("9a7a3e"),
+		Color("59485f"), Color("c4c4be"), Color("292d31"), Color("69737a")
 	]
 	var paint_col: Color = palette[randi() % palette.size()]
 	if vehicle_class == VehicleVisualBuilder.VehicleClass.TAXI:
-		paint_col = Color("ffd600")
+		paint_col = Color("d8a21e")
 	elif vehicle_class == VehicleVisualBuilder.VehicleClass.BUS:
-		paint_col = Color("1565c0")
+		paint_col = Color("24527c")
 	elif vehicle_class == VehicleVisualBuilder.VehicleClass.GARBAGE_TRUCK:
 		paint_col = Color("2e7d32")
 
@@ -114,60 +130,155 @@ func _setup_vehicle() -> void:
 	spot_light.position = Vector3(0, 0.7, -specs["length"] * 0.5)
 	spot_light.rotation_degrees = Vector3(-5, 0, 0)
 	spot_light.spot_range = 28.0
-	spot_light.spot_angle = 35.0
+	spot_light.spot_angle = 52.0
 	spot_light.light_color = Color("fff5dd")
 	spot_light.light_energy = 0.0
 	spot_light.shadow_enabled = false
 	add_child(spot_light)
+
+	rear_light = OmniLight3D.new()
+	rear_light.name = "RearLightGlow"
+	rear_light.position = Vector3(0.0, 0.72, specs["length"] * 0.5)
+	rear_light.omni_range = 5.0
+	rear_light.light_color = Color("ff2934")
+	rear_light.light_energy = 0.0
+	rear_light.shadow_enabled = false
+	add_child(rear_light)
+
+	_create_lamp_materials()
+
+	# Quiet, class-specific engine loop. Only the nearest handful of AI cars are
+	# made audible by TrafficManager, so a full street never becomes a wall of
+	# identical engine noise.
+	engine_audio_system = EngineAudio.new()
+	engine_audio_system.name = "EngineAudioSystem"
+	engine_audio_system.profile_id = EngineAudio.profile_for_class(vehicle_class)
+	engine_audio_system.ai_mode = true
+	engine_audio_system.set_audible(false)
+	add_child(engine_audio_system)
 	
 	# Hook into time manager if available
 	var time_mgrs := get_tree().get_nodes_in_group("time_managers")
 	if not time_mgrs.is_empty():
 		var tm = time_mgrs[0]
 		is_night = tm.is_night
+		lighting_factor = float(tm.get("lighting_factor"))
 		tm.night_mode_changed.connect(_on_night_mode_changed)
-		_update_night_lights(is_night)
+		tm.lighting_factor_changed.connect(_on_lighting_factor_changed)
+		_update_night_lights(lighting_factor)
+
+func _create_lamp_materials() -> void:
+	for hl in headlights:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color("fff4dc")
+		material.emission_enabled = true
+		material.emission = Color("fff0cf")
+		material.emission_energy_multiplier = 0.0
+		hl.material_override = material
+		headlight_materials.append(material)
+	for tl in taillights:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color("a91620")
+		material.emission_enabled = true
+		material.emission = Color("ff2635")
+		material.emission_energy_multiplier = 0.0
+		tl.material_override = material
+		taillight_materials.append(material)
 
 func _on_night_mode_changed(night: bool) -> void:
 	is_night = night
-	_update_night_lights(night)
+	
+func _on_lighting_factor_changed(factor: float) -> void:
+	lighting_factor = clampf(factor, 0.0, 1.0)
+	_update_night_lights(lighting_factor)
 
-func _update_night_lights(night: bool) -> void:
+func _update_night_lights(factor: float) -> void:
 	if spot_light != null:
-		spot_light.light_energy = 1.4 if night else 0.0
-	
-	for hl in headlights:
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color("fff8d6")
-		mat.emission_enabled = night
-		mat.emission = Color("fff8d6")
-		mat.emission_energy_multiplier = 2.0 if night else 0.0
-		hl.material_override = mat
-	
+		spot_light.light_energy = 2.7 * factor
+	if rear_light != null:
+		rear_light.light_energy = 0.65 * factor
+	for material in headlight_materials:
+		material.emission_energy_multiplier = 2.4 * factor
 	_update_brake_lights()
 
 func _update_brake_lights() -> void:
-	for tl in taillights:
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = Color("cc1111")
-		mat.emission_enabled = true
-		mat.emission = Color("ff2222")
+	for mat in taillight_materials:
 		# Bright if braking, dim if night driving, off if daytime non-braking
 		if is_braking:
 			mat.emission_energy_multiplier = 3.5
-		elif is_night:
-			mat.emission_energy_multiplier = 0.8
+			mat.emission_enabled = true
+		elif lighting_factor > 0.01:
+			mat.emission_energy_multiplier = 0.8 * lighting_factor
+			mat.emission_enabled = true
 		else:
 			mat.emission_enabled = false
-		tl.material_override = mat
+
+
+func _update_light_visibility() -> void:
+	var player := driver as Node3D
+	if player == null:
+		player = get_tree().get_first_node_in_group("player") as Node3D
+	var distance_sq := INF
+	if player != null:
+		distance_sq = player.global_position.distance_squared_to(global_position)
+	var near_player := lighting_factor > 0.01 and distance_sq < 110.0 * 110.0
+	if spot_light != null:
+		spot_light.visible = near_player
+	if rear_light != null:
+		rear_light.visible = near_player and distance_sq < 65.0 * 65.0
+
+
+func set_audio_focus(value: bool) -> void:
+	audio_focus = value
+	if engine_audio_system != null:
+		engine_audio_system.set_audible(value)
+
+
+func _update_engine_audio(delta: float) -> void:
+	if engine_audio_system == null:
+		return
+	var rpm := EngineAudio.gear_rpm(current_speed, max_speed)
+	engine_audio_system.update_audio(delta, current_speed, rpm, 0.0 if is_braking else 1.0, 0.0, false)
+
 
 func _physics_process(delta: float) -> void:
+	_light_distance_timer += delta
+	if _light_distance_timer >= 0.5:
+		_light_distance_timer = 0.0
+		_update_light_visibility()
+	# Engine audio only moves volumes/pitch; 10 Hz is enough for AI traffic.
+	if driver != null:
+		_update_engine_audio(delta)
+	else:
+		_audio_timer += delta
+		if _audio_timer >= 0.1:
+			_update_engine_audio(_audio_timer)
+			_audio_timer = 0.0
 	if road_points.is_empty():
 		return
 	if driver != null:
 		_drive_player_controlled(delta)
 		return
-	
+
+	# Distance LOD. The body still moves the same distance per second; it just
+	# integrates in larger steps when it is far enough away not to be readable.
+	var step := delta
+	if _player == null:
+		_player = get_tree().get_first_node_in_group("player") as Node3D
+	if _player != null:
+		var distance := global_position.distance_to(_player.global_position)
+		var interval := 0.0
+		if distance > 90.0:
+			interval = 1.0 / 15.0
+		elif distance > 40.0:
+			interval = 1.0 / 30.0
+		if interval > 0.0:
+			_sim_accum += delta
+			if _sim_accum < interval:
+				return
+			step = _sim_accum
+			_sim_accum = 0.0
+
 	# 1. Obstacle clearance check
 	var obstructed := false
 	if clearance_ray != null and clearance_ray.is_colliding():
@@ -197,26 +308,28 @@ func _physics_process(delta: float) -> void:
 		var target_yaw := atan2(-target_fwd.x, -target_fwd.z)
 		var current_yaw := rotation.y
 		var diff := wrapf(target_yaw - current_yaw, -PI, PI)
-		rotation.y += clampf(diff, -turn_speed * delta, turn_speed * delta)
+		rotation.y += clampf(diff, -turn_speed * step, turn_speed * step)
 	
 	# 4. Acceleration / Braking
 	if obstructed:
 		is_braking = true
-		current_speed = move_toward(current_speed, 0.0, brake_rate * delta)
+		current_speed = move_toward(current_speed, 0.0, brake_rate * step)
 	else:
 		is_braking = false
-		current_speed = move_toward(current_speed, target_speed, accel_rate * delta)
+		current_speed = move_toward(current_speed, target_speed, accel_rate * step)
 	
 	_update_brake_lights()
 	
-	# 5. Movement
+	# 5. Movement. move_and_slide() integrates with the physics delta, so scale
+	# horizontal velocity to cover the entire accumulated step.
+	var step_scale := step / maxf(get_physics_process_delta_time(), 0.0001)
 	var fwd_dir := -global_transform.basis.z
-	velocity = fwd_dir * current_speed
-	velocity.y -= 9.8 * delta # gravity
+	velocity = fwd_dir * current_speed * step_scale
+	velocity.y -= 9.8 * step # gravity
 	move_and_slide()
 	
 	# 6. Spin wheels
-	var spin := (current_speed / 0.35) * delta
+	var spin := (current_speed / 0.35) * step
 	for w in wheels:
 		w.rotate_x(spin)
 
@@ -292,8 +405,9 @@ func _drive_player_controlled(delta: float) -> void:
 	move_and_slide()
 	for collision_index in get_slide_collision_count():
 		var collider := get_slide_collision(collision_index).get_collider()
-		if collider is Node and collider.is_in_group("wildlife") \
-		and collider.has_method("hit_by_vehicle"):
+		if collider is Node and (
+			collider.is_in_group("wildlife") or collider.is_in_group("pedestrians")
+		) and collider.has_method("hit_by_vehicle"):
 			collider.call("hit_by_vehicle",absf(current_speed),self)
 	for wheel in wheels:
 		wheel.rotate_x((current_speed / 0.35) * delta)

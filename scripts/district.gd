@@ -5,12 +5,39 @@ class MiniMap extends Control:
 	var camera_rig: BoomCamera
 	var roads: Array = []
 	var redraw_timer: float = 0.0
+	## Per-road world-space bounds, rebuilt only when the road array changes.
+	## Drawing used to transform every point of all 5,154 roads (28,589 points)
+	## at ~8 Hz; culling to the 340 m map window first makes that a few hundred.
+	var _road_bounds: Array[Rect2] = []
+	var _road_bounds_count: int = -1
+	const MAP_RADIUS_M := 170.0
 
 	func _process(delta: float) -> void:
 		redraw_timer += delta
 		if redraw_timer >= 0.12:
 			redraw_timer = 0.0
 			queue_redraw()
+
+	func _ensure_road_bounds() -> void:
+		if _road_bounds_count == roads.size():
+			return
+		_road_bounds.clear()
+		_road_bounds.resize(roads.size())
+		for road_index in roads.size():
+			var road: Dictionary = roads[road_index]
+			var points: Array = road.get("points", [])
+			var min_point := Vector2(INF, INF)
+			var max_point := Vector2(-INF, -INF)
+			var found := false
+			for point in points:
+				if typeof(point) != TYPE_ARRAY or point.size() < 2:
+					continue
+				var p := Vector2(float(point[0]), float(point[1]))
+				min_point = min_point.min(p)
+				max_point = max_point.max(p)
+				found = true
+			_road_bounds[road_index] = Rect2(min_point, max_point - min_point) if found else Rect2()
+		_road_bounds_count = roads.size()
 
 	func _draw() -> void:
 		var center := size * 0.5
@@ -20,7 +47,18 @@ class MiniMap extends Control:
 		if player_ref != null and is_instance_valid(player_ref):
 			var player_xz := Vector2(player_ref.global_position.x,player_ref.global_position.z)
 			var scale := radius / 170.0
-			for road: Dictionary in roads:
+			_ensure_road_bounds()
+			# The map shows MAP_RADIUS_M around the player; skip roads whose
+			# bounding box cannot reach that window before touching their points.
+			var view_extent := MAP_RADIUS_M + 12.0
+			var view := Rect2(
+				player_xz - Vector2(view_extent, view_extent),
+				Vector2.ONE * view_extent * 2.0
+			)
+			for road_index in roads.size():
+				if not _road_bounds[road_index].intersects(view):
+					continue
+				var road: Dictionary = roads[road_index]
 				var points: Array = road.get("points",[])
 				var road_kind := str(road.get("highway",""))
 				var line_color := Color(0.44,0.55,0.57,0.8)
@@ -62,6 +100,7 @@ var message: String = "WELCOME TO DISTRICT ZERO · Find a ride. Make some noise.
 var hurt_flash: float = 0
 var vehicles: Array[ArcadeCar] = []
 var nearest: Node3D
+var _nearest_timer: float = 0.0
 var cross: Label
 var hit_time: float = 0.0
 var reload_bar: ProgressBar
@@ -104,7 +143,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"melee":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -135,8 +174,22 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.equip_weapon(BoomPlayer.WEAPON_PISTOL)
 	if event.is_action_pressed("weapon_shotgun"):
 		player.equip_weapon(BoomPlayer.WEAPON_SHOTGUN)
-	if event.is_action_pressed("melee"):
-		player.melee()
+	if event.is_action_pressed("weapon_smg"):
+		player.equip_weapon(BoomPlayer.WEAPON_SMG)
+	if event.is_action_pressed("weapon_next"):
+		player.cycle_weapon()
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			player.cycle_weapon()
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			player.cycle_weapon(-1)
+	if event.is_action_pressed("flashlight"):
+		player.toggle_flashlight()
+	var audio := get_node_or_null("/root/AudioDirector")
+	if event.is_action_pressed("audio_up") and audio != null:
+		message = "MASTER %+d dB" % int(audio.adjust_master_volume(2.0))
+	if event.is_action_pressed("audio_down") and audio != null:
+		message = "MASTER %+d dB" % int(audio.adjust_master_volume(-2.0))
 	if event.is_action_pressed("reset"):
 		player.respawn()
 
@@ -164,11 +217,20 @@ func find_nearest_vehicle() -> void:
 			nearest = traffic
 			distance = d
 
+func _set_label_text(label: Label, text: String) -> void:
+	# Assigning Label.text every frame re-shapes the label even when nothing
+	# changed; the HUD has three of them, so guard the assignment.
+	if label != null and label.text != text:
+		label.text = text
+
 func _process(dt: float) -> void:
-	find_nearest_vehicle()
+	_nearest_timer += dt
+	if _nearest_timer >= 0.1:
+		_nearest_timer = 0.0
+		find_nearest_vehicle()
 	hurt_flash = maxf(0,hurt_flash-dt)
 	hit_time = maxf(0,hit_time-dt)
-	cross.text = "×" if hit_time > 0 else "+"
+	_set_label_text(cross, "×" if hit_time > 0 else "+")
 	cross.modulate = Color("ffcb52") if hit_time > 0 else Color.WHITE
 	cross.visible = player.vehicle == null
 	var current_reload := player.current_reload_time()
@@ -176,27 +238,29 @@ func _process(dt: float) -> void:
 	reload_bar.visible = current_reload > 0.0 and player.vehicle == null
 	reload_bar.value = (1.0-current_reload/reload_duration)*100.0
 	flash.color.a = hurt_flash*0.8
-	hud.text = "HEALTH  %03d     /     REP  %03d\n%s   %s" % [
+	_set_label_text(hud, "HEALTH  %03d     /     REP  %03d\n%s   %s" % [
 		player.health,player.kills*100+player.bonus_reputation,
-		player.weapon_status_text(),"RELOADING…" if current_reload > 0.0 else ""]
+		player.weapon_status_text(),"RELOADING…" if current_reload > 0.0 else ""])
 	health_bar.value = clampf(player.health,0.0,100.0)
 	health_bar.modulate = Color("e65a54") if player.health < 30 else Color("d5b45e")
+	var hint_text := ""
 	if player.vehicle != null:
 		var car := player.vehicle
 		var max_health := maxf(float(car.get("max_health")),1.0)
-		status.text = "%s   /   %03d KM/H   /   HULL %d%%" % [
+		_set_label_text(status, "%s   /   %03d KM/H   /   HULL %d%%" % [
 			car.get("vehicle_name"),absf(float(car.get("speed")))*3.6,
-			float(car.get("health"))/max_health*100]
-		hint.text = "W S accelerate/reverse · A D steer · SPACE brake · SHIFT NOS boost · E exit"
+			float(car.get("health"))/max_health*100])
+		hint_text = "W S accelerate/reverse · A D steer · SPACE brake · SHIFT NOS boost · E exit"
 	else:
-		status.text = message
+		_set_label_text(status, message)
 		if nearest != null:
 			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") else "DRIVE"
-			hint.text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
+			hint_text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
 		else:
-			hint.text = "WASD move · SHIFT sprint · SPACE jump · RMB aim · LMB fire · 1 pistol · 2 shotgun · R reload"
+			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload"
 	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-		hint.text = "MOUSE RELEASED · Click to resume     F5  respawn"
+		hint_text = "MOUSE RELEASED · Click to resume     F5  respawn"
+	_set_label_text(hint, hint_text)
 
 func build_hud() -> void:
 	var layer := CanvasLayer.new()
@@ -510,40 +574,14 @@ func sound(frequency: float, duration: float) -> void:
 	audio.finished.connect(audio.queue_free)
 	audio.play()
 
-func gunshot(shotgun: bool = false) -> void:
-	const SAMPLE_RATE := 44100
-	var duration := 0.48 if shotgun else 0.34
-	var body_frequency := 64.0 if shotgun else 92.0
-	var body_decay := 11.0 if shotgun else 17.0
-	var sample_count := int(SAMPLE_RATE * duration)
-	var samples := PackedByteArray()
-	samples.resize(sample_count * 2)
-	var random := RandomNumberGenerator.new()
-	random.randomize()
-	var filtered_noise := 0.0
-	for index in sample_count:
-		var time := float(index) / SAMPLE_RATE
-		var noise := random.randf_range(-1.0,1.0)
-		filtered_noise = lerpf(filtered_noise,noise,0.48)
-		var crack := noise * exp(-time * 72.0)
-		var body_envelope := exp(-time * body_decay)
-		var bass := sin(TAU * (body_frequency - minf(time * 90.0,48.0)) * time)
-		var low_thump := bass * body_envelope
-		var tail := filtered_noise * exp(-time * 7.5)
-		var receiver_clack := sin(TAU * 740.0 * (time - 0.055)) * exp(-absf(time - 0.055) * 65.0)
-		var echo := sin(TAU * 125.0 * (time - 0.105)) * exp(-maxf(time - 0.105,0.0) * 12.0) if time >= 0.105 else 0.0
-		var value := crack * 0.72 + low_thump * 0.62 + tail * 0.14 + receiver_clack * 0.16 + echo * 0.11
-		samples.encode_s16(index * 2,int(clampf(value,-1.0,1.0) * 30000.0))
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = SAMPLE_RATE
-	stream.data = samples
-	var audio := AudioStreamPlayer3D.new()
-	audio.stream = stream
-	audio.volume_db = 0.0 if shotgun else -5.0
-	audio.unit_size = 5.0
-	audio.max_distance = 75.0
-	audio.position = player.global_position + Vector3.UP * 1.4
-	add_child(audio)
-	audio.finished.connect(audio.queue_free)
-	audio.play()
+## Weapon reports are owned by AudioDirector: pooled, level-managed and
+## compressed. Keeping this entry point means player combat code stays simple.
+## Accepts the new string ids and the old boolean shotgun flag.
+func gunshot(kind: Variant = "pistol") -> void:
+	var weapon := str(kind) if typeof(kind) == TYPE_STRING else ("shotgun" if kind else "pistol")
+	var audio := get_node_or_null("/root/AudioDirector")
+	if audio == null:
+		return
+	# One report per shot. The old code created a new player per shot and the
+	# 3D duplicate made every round read twice as loud.
+	audio.play_weapon(weapon)

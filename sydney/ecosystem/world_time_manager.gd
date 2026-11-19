@@ -8,6 +8,7 @@ extends Node
 signal time_changed(hours: float, formatted_time: String)
 signal period_changed(period_name: String)
 signal night_mode_changed(is_night: bool)
+signal lighting_factor_changed(factor: float)
 
 # Day length in real-world seconds (30 minutes default)
 @export var day_length_seconds: float = 1800.0
@@ -20,6 +21,8 @@ signal night_mode_changed(is_night: bool)
 
 var current_period: String = "night"
 var is_night: bool = true
+var lighting_factor: float = 0.0
+var _lighting_emit_accum: float = 0.0
 
 # Lighting references
 var world_env: WorldEnvironment
@@ -40,7 +43,7 @@ func _ready() -> void:
 	add_to_group("time_managers")
 	_find_lighting_nodes()
 	_update_period(true)
-	_apply_lighting(0.0)
+	_apply_lighting(0.0, true)
 
 func _find_lighting_nodes() -> void:
 	var root := get_tree().root
@@ -81,7 +84,7 @@ func set_time(hours: float) -> void:
 	if current_time_hours < 0.0:
 		current_time_hours += 24.0
 	_update_period(true)
-	_apply_lighting(0.0)
+	_apply_lighting(0.0, true)
 	time_changed.emit(current_time_hours, get_formatted_time())
 
 func _update_period(force: bool) -> void:
@@ -121,7 +124,18 @@ func _update_period(force: bool) -> void:
 		is_night = night
 		night_mode_changed.emit(is_night)
 
-func _apply_lighting(_delta: float) -> void:
+func _apply_lighting(delta: float, force: bool = false) -> void:
+	var next_lighting_factor := _night_lighting_factor(current_time_hours)
+	if absf(next_lighting_factor - lighting_factor) > 0.0001:
+		lighting_factor = next_lighting_factor
+		# Dawn/dusk changes the factor every frame, and every emission fans out
+		# to city lights plus one callback per AI vehicle. 10 Hz is visually
+		# identical over a ~112 s transition and costs 6x less.
+		_lighting_emit_accum += delta
+		if force or _lighting_emit_accum >= 0.1:
+			_lighting_emit_accum = 0.0
+			lighting_factor_changed.emit(lighting_factor)
+
 	if directional_light == null or world_env == null or world_env.environment == null:
 		_find_lighting_nodes()
 		if directional_light == null or world_env == null or world_env.environment == null:
@@ -201,26 +215,29 @@ func _apply_lighting(_delta: float) -> void:
 		sun_yaw = lerpf(-110.0, 70.0, night_t)
 		# Moon or faint night directional light
 		sun_pitch = -sin(night_t * PI) * 45.0 - 5.0
-		light_col = Color("7b99c7") # Cool silver-blue moonlight
-		light_energy = 0.08
-		ambient_col = Color("1a2638") # Deep Sydney night sky ambient
-		ambient_energy = 0.32
-		sky_top = Color("050914") # Dark navy night sky
-		sky_horizon = Color("121f30")
+		light_col = Color("849fc9") # Cool silver-blue moonlight
+		light_energy = 0.22
+		# A cool moon fill keeps facades and the road readable without flattening
+		# the night into daylight-grey. The dark sky still owns the horizon; pool
+		# lighting from lamps, windows and vehicles does the rest.
+		ambient_col = Color("6a7f96")
+		ambient_energy = 0.46
+		sky_top = Color("0a1120") # Dark navy night sky
+		sky_horizon = Color("1b2a3b")
 		
 		# Dusk transition (18.0 - 19.5)
 		if current_time_hours >= 18.0 and current_time_hours < 19.5:
 			var t := (current_time_hours - 18.0) / 1.5
-			light_energy = lerpf(0.3, 0.08, t)
-			ambient_col = Color("3b3858").lerp(Color("1a2638"), t)
-			ambient_energy = lerpf(0.38, 0.32, t)
+			light_energy = lerpf(0.3, 0.12, t)
+			ambient_col = Color("3b3858").lerp(Color("536983"), t)
+			ambient_energy = lerpf(0.38, 0.34, t)
 			sky_top = Color("1b2042").lerp(Color("050914"), t)
 			sky_horizon = Color("8f3c4d").lerp(Color("121f30"), t)
 		# Pre-dawn transition (4.5 - 6.0)
 		elif current_time_hours >= 4.5 and current_time_hours < 6.0:
 			var t := (current_time_hours - 4.5) / 1.5
-			light_energy = lerpf(0.08, 0.3, t)
-			ambient_col = Color("1a2638").lerp(Color("586a82"), t)
+			light_energy = lerpf(0.12, 0.3, t)
+			ambient_col = Color("536983").lerp(Color("586a82"), t)
 			ambient_energy = lerpf(0.32, 0.45, t)
 			sky_top = Color("050914").lerp(Color("26466b"), t)
 			sky_horizon = Color("121f30").lerp(Color("d69372"), t)
@@ -237,3 +254,19 @@ func _apply_lighting(_delta: float) -> void:
 		sky_mat.sky_top_color = sky_top
 		sky_mat.sky_horizon_color = sky_horizon
 		sky_mat.ground_horizon_color = sky_horizon.darkened(0.3)
+
+
+func _night_lighting_factor(hours: float) -> float:
+	var wrapped := fposmod(hours, 24.0)
+	if wrapped >= 20.5 or wrapped < 4.5:
+		return 1.0
+	if wrapped >= 17.0:
+		return _smooth_step(17.0, 20.5, wrapped)
+	if wrapped >= 4.5 and wrapped < 7.0:
+		return 1.0 - _smooth_step(4.5, 7.0, wrapped)
+	return 0.0
+
+
+func _smooth_step(edge_a: float, edge_b: float, value: float) -> float:
+	var t := clampf((value - edge_a) / (edge_b - edge_a), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)

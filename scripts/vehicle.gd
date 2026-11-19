@@ -51,6 +51,8 @@ var wheels: Array[MeshInstance3D]
 var wheel_visuals: Array[MeshInstance3D]
 var body_art: Node3D
 var engine_audio: AudioStreamPlayer3D
+var engine_audio_system: EngineAudio
+var engine_rpm: float = 0.0
 var boost_audio: AudioStreamPlayer3D
 var brake_lights: Array[MeshInstance3D]
 var skid_marks: SkidMarks
@@ -69,6 +71,7 @@ var sus_pitch := 0.0
 var impact_cooldown := 0.0
 var velocity_before := Vector3.ZERO
 var _blocked_msg_shown := false
+var destroyed: bool = false
 
 const SLIDE_MIN := 3.0
 
@@ -76,6 +79,7 @@ const SLIDE_MIN := 3.0
 func _ready() -> void:
 	home = position
 	health = max_health
+	destroyed = false
 	floor_snap_length = 0.7
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(2.0,1.3,4.2)
@@ -124,6 +128,15 @@ func _ready() -> void:
 		if style == 1:
 			Art.box(body_art,Vector3(0,1.35,1.8),Vector3(2.2,0.12,0.5),paint)
 		Art.box(body_art,Vector3(0,0.66,2.09),Vector3(0.55,0.17,0.04),Color("f0e4ca"))
+	# Painted metal rather than flat plastic: the Art cache shares one rough
+	# material per colour, so duplicate before polishing the car body.
+	for part in body_art.get_children():
+		var mesh_part := part as MeshInstance3D
+		if mesh_part != null and mesh_part.material_override is StandardMaterial3D:
+			var paint_material: StandardMaterial3D = mesh_part.material_override.duplicate()
+			paint_material.metallic = maxf(paint_material.metallic, 0.38)
+			paint_material.roughness = minf(paint_material.roughness, 0.42)
+			mesh_part.material_override = paint_material
 	# Keep the running gear attached to the chassis, not the pitching body
 	# presentation. Otherwise a 0.3 rad nose-up body animation visibly lifts the
 	# front axle off the road during acceleration.
@@ -137,25 +150,22 @@ func _ready() -> void:
 
 
 func setup_engine_audio() -> void:
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = 22050
-	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	stream.loop_end = 4410
-	var samples := PackedByteArray()
-	samples.resize(8820)
-	for i in 4410:
-		var phase := float(i)*TAU*55/22050
-		var wave := sin(phase)*0.6+sin(phase*2)*0.25+sin(phase*4)*0.15
-		samples.encode_s16(i*2,int(wave*12000))
-	stream.data = samples
-	engine_audio = AudioStreamPlayer3D.new()
-	engine_audio.stream = stream
-	engine_audio.volume_db = -60
-	engine_audio.unit_size = 8
-	engine_audio.max_distance = 45
-	add_child(engine_audio)
-	engine_audio.play()
+	# The engine is a reusable, state-driven system with per-class profiles and
+	# separate tyre/road layers (scripts/engine_audio.gd).
+	var system := EngineAudio.new()
+	system.name = "EngineAudioSystem"
+	system.profile_id = _engine_profile()
+	add_child(system)
+	engine_audio_system = system
+
+
+func _engine_profile() -> String:
+	var upper := vehicle_name.to_upper()
+	if style == 1 or upper.contains("VIPER"):
+		return "sports"
+	if style == 2 or upper.contains("HAULER") or upper.contains("DELIVERY"):
+		return "ute"
+	return "car"
 
 
 func setup_boost_audio() -> void:
@@ -181,6 +191,7 @@ func setup_boost_audio() -> void:
 	stream.data = samples
 	boost_audio = AudioStreamPlayer3D.new()
 	boost_audio.stream = stream
+	boost_audio.bus = "Vehicles"
 	boost_audio.volume_db = -80
 	boost_audio.unit_size = 8
 	boost_audio.max_distance = 30
@@ -188,12 +199,17 @@ func setup_boost_audio() -> void:
 
 
 func _process(dt: float) -> void:
+	if destroyed:
+		effects.update(dt, self)
+		return
 	var occupied := driver != null and health > 0
-	engine_audio.volume_db = lerpf(engine_audio.volume_db,-21.0 if occupied else -60.0,1-exp(-5*dt))
-	engine_audio.pitch_scale = lerpf(engine_audio.pitch_scale,
-		(0.8+absf(speed)/top_speed*1.9)*(1.0+boost_factor*0.45), 1-exp(-5*dt))
+	var throttle := maxf(0.0, Input.get_axis("back","forward")) if occupied else 0.0
+	engine_rpm = EngineAudio.gear_rpm(speed, top_speed)
+	if engine_audio_system != null:
+		engine_audio_system.set_audible(occupied)
+		engine_audio_system.update_audio(dt, speed, engine_rpm, throttle, absf(lateral_speed), airborne)
 	if boost_on:
-		boost_audio.volume_db = lerpf(boost_audio.volume_db, -14.0, 1-exp(-7*dt))
+		boost_audio.volume_db = lerpf(boost_audio.volume_db, -24.0, 1-exp(-7*dt))
 		boost_audio.pitch_scale = lerpf(boost_audio.pitch_scale, 1.3, 0.35*dt)
 		if not boost_audio.is_playing():
 			boost_audio.play()
@@ -214,6 +230,8 @@ func _exit_tree() -> void:
 
 ## ------------------------------------------------------------------ physics
 func _physics_process(dt: float) -> void:
+	if destroyed:
+		return
 	impact_cooldown = maxf(0,impact_cooldown-dt)
 	if repair_time > 0:
 		repair_time -= dt
@@ -221,11 +239,14 @@ func _physics_process(dt: float) -> void:
 			position = home
 			rotation = Vector3.ZERO
 			health = max_health
+			destroyed = false
 			body_art.visible = true
 			collision_layer = 1
 			collision_mask = 1
 			return
 	_input_and_boost_state(dt)
+	if driver != null and Input.is_action_just_pressed("horn") and engine_audio_system != null:
+		engine_audio_system.honk()
 	_speed_control(dt)
 	_steering(dt)
 	_suspension(dt)
@@ -436,11 +457,17 @@ func _apply_crash_tips(contact_details: Array[Dictionary]) -> void:
 			if other.has_method("hit_by_vehicle"):
 				other.call("hit_by_vehicle",absf(speed),self)
 			continue
+		if other is Node and other.is_in_group("pedestrians"):
+			if other.has_method("hit_by_vehicle"):
+				other.call("hit_by_vehicle",absf(speed),self)
+			continue
 		if absf(normal.y) < 0.5 and impact > 5 and impact_cooldown <= 0:
 			if other != null and other.has_method("take_damage"):
 				other.take_damage(speed*4.0)
 			take_damage(impact*1.3)
 			_tip_from_impact(velocity_before, impact)
+			if engine_audio_system != null:
+				engine_audio_system.impact(impact)
 			## The speed reversal models a bounce-back from a crash, but not
 			## while the handbrake is held — the handbrake's own decay takes
 			## the car to rest and negative speed breaks the stop contract.
@@ -520,17 +547,27 @@ func exit_vehicle() -> bool:
 
 
 func take_damage(amount: float) -> void:
-	if health <= 0:
+	if destroyed or health <= 0:
 		return
+	# Gunfire is tuned to six pistol rounds (20 HP each) independently of the
+	# exported crash health. Crash impacts arrive as larger physical values.
+	if amount <= 30.0:
+		amount = 20.0
 	health = maxf(0,health-amount)
 	if health <= 0:
-		if driver != null:
-			driver.respawn()
-		body_art.visible = false
-		collision_layer = 0
-		collision_mask = 0
-		speed = 0
-		velocity = Vector3.ZERO
-		roll = 0.0
-		rotation.z = 0.0
-		repair_time = 8.0
+		_destroy_vehicle()
+
+
+func _destroy_vehicle() -> void:
+	destroyed = true
+	if driver != null:
+		driver.respawn()
+	effects.play_explosion()
+	body_art.visible = false
+	collision_layer = 0
+	collision_mask = 0
+	speed = 0
+	velocity = Vector3.ZERO
+	roll = 0.0
+	rotation.z = 0.0
+	repair_time = 8.0

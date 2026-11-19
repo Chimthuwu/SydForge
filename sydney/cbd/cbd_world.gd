@@ -46,6 +46,9 @@ const AUTHORED_LANDMARK_BUILDINGS := [
 	"way/16749128", # St Mary's Cathedral
 ]
 const CbdLandmarks := preload("res://sydney/cbd/cbd_landmarks.gd")
+const FACADE_SHADER := preload("res://shaders/facade.gdshader")
+const ASPHALT_SHADER := preload("res://shaders/asphalt.gdshader")
+const CbdRailNetwork := preload("res://sydney/cbd/cbd_rail_network.gd")
 
 var district_centres: Dictionary = {}
 var viewpoints: Dictionary = {}
@@ -69,6 +72,17 @@ func _build() -> void:
 	geometry_counts["CBDLandmarks"] = landmarks.stats
 	var elapsed := (Time.get_ticks_usec() - start) / 1000.0
 	build_times_ms["CBDLandmarks"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+	start = Time.get_ticks_usec()
+	var railway: Node3D = CbdRailNetwork.new()
+	railway.name = "SydneyRailNetwork"
+	if railway.build(data, get_node_or_null("HarbourBridge")):
+		add_child(railway)
+		geometry_counts["SydneyRailNetwork"] = railway.stats
+	else:
+		railway.free()
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["SydneyRailNetwork"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 
 
@@ -125,6 +139,20 @@ func _build_buildings() -> void:
 	var mesh = result.get("mesh")
 	if mesh != null:
 		_add_mesh("Buildings", SydneyMesh.engine_building_mesh(mesh))
+	var buildings_instance := get_node_or_null("Buildings") as MeshInstance3D
+	if buildings_instance != null:
+		# The merged shell stays cheap; the facade shader supplies window depth,
+		# shopfronts, frames and night lighting without millions of extra tris.
+		buildings_instance.material_override = _facade_material()
+		buildings_instance.add_to_group("facade_surfaces")
+	var night_windows := result.get("nightWindows") as ArrayMesh
+	if night_windows != null and night_windows.get_surface_count() > 0:
+		var windows_instance := MeshInstance3D.new()
+		windows_instance.name = "NightWindows"
+		windows_instance.mesh = night_windows
+		# Superseded by the aligned procedural windows in the facade shader.
+		windows_instance.visible = false
+		add_child(windows_instance)
 	var counts: Dictionary = geometry_counts.get("Buildings", {}).duplicate()
 	var faces: PackedVector3Array = result.get("faces", PackedVector3Array())
 	counts["triangles"] = int(building_stats.get("triangles", counts.get("triangles", 0)))
@@ -134,6 +162,7 @@ func _build_buildings() -> void:
 	counts["skipped"] = int(building_stats.get("skipped", 0))
 	counts["degenerateTriangles"] = int(building_stats.get("degenerateTriangles", 0))
 	counts["detachedPodiums"] = int(building_stats.get("detachedPodiums", 0))
+	counts["nightWindowQuads"] = int(building_stats.get("nightWindowQuads", 0))
 	counts["byStyle"] = building_stats.get("byStyle", {})
 	geometry_counts["Buildings"] = counts
 	geometry_counts["Architecture"] = {
@@ -193,7 +222,29 @@ func _build_roads() -> void:
 	super()
 	var roads := get_node_or_null("Roads") as MeshInstance3D
 	if roads != null:
-		roads.material_override = SydneyMesh.mat(Color("4a525b"))
+		roads.material_override = _asphalt_material(Color("33383d"), 0.82)
+	# Footpaths and crossings read as concrete, not the same flat strip as the
+	# carriageway. The same shader with lighter, rougher values is enough.
+	for node_name in ["Footpaths", "Crossings", "Parking"]:
+		var surface := get_node_or_null(node_name) as MeshInstance3D
+		if surface != null:
+			surface.material_override = _asphalt_material(Color("7a786f"), 0.94)
+
+
+func _facade_material() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = FACADE_SHADER
+	material.set_shader_parameter("night_factor", 0.0)
+	return material
+
+
+func _asphalt_material(color: Color, roughness: float) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = ASPHALT_SHADER
+	material.set_shader_parameter("base_color", color)
+	material.set_shader_parameter("roughness_base", roughness)
+	material.set_shader_parameter("patch_strength", 0.14 if roughness > 0.9 else 0.22)
+	return material
 
 
 func _build_parks() -> void:

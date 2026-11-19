@@ -10,10 +10,13 @@ var manual_look_time: float = 0.0
 var recoil: float = 0.0
 var weapon_mount: Node3D
 var shotgun_mount: Node3D
+var smg_mount: Node3D
 var muzzle_flash: MeshInstance3D
 var muzzle_light: OmniLight3D
 var shotgun_muzzle_flash: MeshInstance3D
 var shotgun_muzzle_light: OmniLight3D
+var smg_muzzle_flash: MeshInstance3D
+var smg_muzzle_light: OmniLight3D
 var muzzle_time: float = 0.0
 
 func _ready() -> void:
@@ -36,12 +39,16 @@ func _ready() -> void:
 	global_position = target.global_position+Vector3(0,1.62,0)
 	_build_first_person_weapon()
 	_build_first_person_shotgun()
+	_build_first_person_smg()
 
 
 func _build_first_person_weapon() -> void:
 	weapon_mount = Node3D.new()
 	weapon_mount.name = "FirstPersonPistol"
-	weapon_mount.position = Vector3(0.0, 0.0, 0.0)
+	# Slightly smaller and lower than the blockout, so the weapon frames the
+	# view instead of covering the lower-right third of the screen.
+	weapon_mount.position = Vector3(0.05, -0.03, 0.06)
+	weapon_mount.scale = Vector3(0.80, 0.80, 0.80)
 	camera.add_child(weapon_mount)
 
 	# Procedural service-pistol silhouette: separate steel slide, polymer frame,
@@ -84,6 +91,13 @@ func _build_first_person_weapon() -> void:
 	guard_front.rotation.x = -0.12
 	_weapon_box(Vector3(0.28, -0.36, -0.695), Vector3(0.012, 0.045, 0.018), Color("b6bdbe"))
 
+	# Grip hand, sleeve and support hand. Without these the pistol read as a
+	# floating grey block rather than a first-person weapon.
+	_weapon_box(Vector3(0.30, -0.45, -0.50), Vector3(0.19, 0.20, 0.22), Color("b98d6c"))
+	_weapon_box(Vector3(0.31, -0.57, -0.34), Vector3(0.18, 0.19, 0.46), Color("26313a"))
+	_weapon_box(Vector3(0.16, -0.36, -0.61), Vector3(0.16, 0.13, 0.19), Color("b98d6c"))
+	_weapon_box(Vector3(0.09, -0.43, -0.48), Vector3(0.16, 0.17, 0.42), Color("2d3944"))
+
 	muzzle_flash = MeshInstance3D.new()
 	muzzle_flash.name = "MuzzleFlash"
 	var flash_mesh := SphereMesh.new()
@@ -113,6 +127,8 @@ func _build_first_person_weapon() -> void:
 func _build_first_person_shotgun() -> void:
 	shotgun_mount = Node3D.new()
 	shotgun_mount.name = "FirstPersonPumpShotgun"
+	shotgun_mount.position = Vector3(0.04, -0.03, 0.05)
+	shotgun_mount.scale = Vector3(0.82, 0.82, 0.82)
 	camera.add_child(shotgun_mount)
 	_shotgun_box(Vector3(0.30,-0.30,-0.64),Vector3(0.13,0.14,0.31),Color("30383e"))
 	_shotgun_box(Vector3(0.30,-0.38,-0.47),Vector3(0.12,0.23,0.16),Color("242a2e"))
@@ -160,6 +176,59 @@ func _build_first_person_shotgun() -> void:
 	shotgun_muzzle_light.omni_range = 4.0
 	shotgun_muzzle_light.visible = false
 	shotgun_mount.add_child(shotgun_muzzle_light)
+	_shotgun_box(Vector3(0.30,-0.41,-0.49),Vector3(0.17,0.17,0.22),Color("b98d6c"))
+	_shotgun_box(Vector3(0.31,-0.53,-0.33),Vector3(0.16,0.17,0.44),Color("2b3640"))
+	_shotgun_box(Vector3(0.30,-0.36,-1.02),Vector3(0.18,0.12,0.26),Color("b98d6c"))
+	_shotgun_box(Vector3(0.18,-0.39,-0.90),Vector3(0.15,0.15,0.38),Color("2d3944"))
+
+func _build_first_person_smg() -> void:
+	smg_mount = Node3D.new()
+	smg_mount.name = "FirstPersonSmg"
+	smg_mount.position = Vector3(0.04, -0.02, 0.05)
+	smg_mount.scale = Vector3(0.80, 0.80, 0.80)
+	camera.add_child(smg_mount)
+	# Compact SMG silhouette: stamped receiver, short barrel, angled magazine,
+	# folding stock and a red-dot rail.
+	_shotgun_box(Vector3(0.28,-0.29,-0.66),Vector3(0.13,0.16,0.34),Color("2a3036"))
+	_shotgun_box(Vector3(0.28,-0.36,-0.53),Vector3(0.11,0.22,0.15),Color("1c2126"))
+	_shotgun_box(Vector3(0.28,-0.30,-0.96),Vector3(0.09,0.09,0.30),Color("1a1f24"))
+	_shotgun_cylinder(Vector3(0.28,-0.27,-1.12),0.026,0.22,Color("12171b"))
+	_shotgun_box(Vector3(0.28,-0.17,-0.72),Vector3(0.06,0.035,0.40),Color("333b41"))
+	_shotgun_box(Vector3(0.28,-0.145,-0.78),Vector3(0.055,0.05,0.07),Color("11171c"))
+	# Angled magazine and grip.
+	var magazine := _shotgun_box(Vector3(0.28,-0.49,-0.62),Vector3(0.075,0.34,0.13),Color("20262b"))
+	magazine.rotation.x = 0.22
+	var grip := _shotgun_box(Vector3(0.28,-0.44,-0.48),Vector3(0.10,0.20,0.13),Color("20262b"))
+	grip.rotation.x = -0.20
+	_shotgun_box(Vector3(0.38,-0.28,-0.62),Vector3(0.02,0.035,0.12),Color("7a878e"))
+	# Hands and sleeves.
+	_shotgun_box(Vector3(0.30,-0.43,-0.47),Vector3(0.18,0.18,0.21),Color("b98d6c"))
+	_shotgun_box(Vector3(0.31,-0.55,-0.32),Vector3(0.17,0.18,0.44),Color("26313a"))
+	_shotgun_box(Vector3(0.29,-0.35,-0.90),Vector3(0.17,0.12,0.24),Color("b98d6c"))
+	_shotgun_box(Vector3(0.17,-0.40,-0.80),Vector3(0.14,0.14,0.36),Color("2d3944"))
+
+	smg_muzzle_flash = MeshInstance3D.new()
+	var flash_mesh := SphereMesh.new()
+	flash_mesh.radius = 0.075
+	flash_mesh.height = 0.15
+	smg_muzzle_flash.mesh = flash_mesh
+	smg_muzzle_flash.position = Vector3(0.28,-0.27,-1.24)
+	var flash_material := StandardMaterial3D.new()
+	flash_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flash_material.albedo_color = Color("fff0a0")
+	flash_material.emission_enabled = true
+	flash_material.emission = Color("ffb32e")
+	flash_material.emission_energy_multiplier = 2.4
+	smg_muzzle_flash.material_override = flash_material
+	smg_muzzle_flash.visible = false
+	smg_mount.add_child(smg_muzzle_flash)
+	smg_muzzle_light = OmniLight3D.new()
+	smg_muzzle_light.position = smg_muzzle_flash.position
+	smg_muzzle_light.light_color = Color("ffb65c")
+	smg_muzzle_light.light_energy = 0.9
+	smg_muzzle_light.omni_range = 2.6
+	smg_muzzle_light.visible = false
+	smg_mount.add_child(smg_muzzle_light)
 
 func _shotgun_box(at: Vector3, dimensions: Vector3, tint: Color) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
@@ -234,13 +303,21 @@ func show_muzzle_flash() -> void:
 		muzzle_time = 0.08
 		shotgun_muzzle_flash.visible = true
 		shotgun_muzzle_light.visible = true
+	elif target.is_smg_equipped():
+		muzzle_time = 0.035
+		smg_muzzle_flash.visible = true
+		smg_muzzle_light.visible = true
 	else:
 		muzzle_flash.visible = true
 		muzzle_light.visible = true
 
 
 func muzzle_position() -> Vector3:
-	return shotgun_muzzle_flash.global_position if target.is_shotgun_equipped() else muzzle_flash.global_position
+	if target.is_shotgun_equipped():
+		return shotgun_muzzle_flash.global_position
+	if target.is_smg_equipped():
+		return smg_muzzle_flash.global_position
+	return muzzle_flash.global_position
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -262,6 +339,8 @@ func _process(dt: float) -> void:
 		muzzle_light.visible = false
 		shotgun_muzzle_flash.visible = false
 		shotgun_muzzle_light.visible = false
+		smg_muzzle_flash.visible = false
+		smg_muzzle_light.visible = false
 	if driving and manual_look_time <= 0 and vehicle_speed > 4:
 		yaw = lerp_angle(yaw,target.vehicle.rotation.y,1-exp(-2*dt))
 		pitch = lerpf(pitch,-0.18,1-exp(-1.5*dt))
@@ -272,11 +351,13 @@ func _process(dt: float) -> void:
 		arm.position = Vector3(0.8, 0.0, 0.0)
 		weapon_mount.visible = false
 		shotgun_mount.visible = false
+		smg_mount.visible = false
 	else:
 		global_position = desired
 		arm.position = Vector3.ZERO
-		weapon_mount.visible = not target.is_shotgun_equipped()
+		weapon_mount.visible = not target.is_shotgun_equipped() and not target.is_smg_equipped()
 		shotgun_mount.visible = target.is_shotgun_equipped()
+		smg_mount.visible = target.is_smg_equipped()
 	rotation = Vector3(pitch+recoil,yaw,0)
 	var distance := 9.0 if driving else 0.0
 	arm.spring_length = lerpf(arm.spring_length,distance,1-exp(-6*dt))

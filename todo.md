@@ -7,8 +7,8 @@
 - Re-run the ecosystem suite and canonical scene startup. The District Zero integration suite still has the two documented melee/reputation failures.
 
 ## Sydney transport and places
-- Add Wynyard as an underground station, a rail tunnel emerging toward the Harbour Bridge, and a continuous route through the bridge to Milsons Point station.
-- Add accurate Tangara/T-set and Millennium train traffic. Clarify what “Ridgey (Tsets)” refers to. No suitable train model was found in the shared asset library; inspect any new candidate's license and compatibility before use.
+- [x] Add Wynyard and Town Hall underground stations, a rail tunnel emerging toward the Harbour Bridge, and a continuous double-track route from Milsons Point through to Redfern. See [rail-network phase 1](docs/SYDNEY_RAIL_NETWORK_PHASE1.md).
+- Add accurate K-set and Tangara/T-set train traffic; no Millennium trains. Inspect the supplied model archives' license and compatibility before use.
 - Build the missing CBD-to-bridge overpass and connect it to Anzac Bridge without overlapping or breaking the canonical world.
 - Add Luna Park and authored Kings Cross nightlife/people, and refine Town Hall, QVB, and Hyde Park.
 

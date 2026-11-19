@@ -112,6 +112,7 @@ func run() -> void:
 	await frames(90)
 	check(p.ammo == 12 and p.reload_time <= 0,"reload refills magazine after delay")
 	foe.position = p.position+Vector3(0,0,-1.5)
+	await frames(1)
 	p.melee()
 	check(foe.health == 35,"melee damages nearby enemy")
 	foe.take_damage(40)

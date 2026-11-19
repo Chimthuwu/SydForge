@@ -52,6 +52,29 @@ func _process(delta: float) -> void:
 		_spawn_timer = 0.0
 		_cull_distant_vehicles()
 		_spawn_traffic_near_player()
+		_update_audio_focus()
+
+
+## Only the nearest few AI vehicles get an audible engine. The rest keep their
+## silent loop and are faded out, so a busy arterial stays readable.
+func _update_audio_focus() -> void:
+	var p_pos := player_ref.global_position
+	var candidates: Array = []
+	for vehicle in active_vehicles:
+		if not is_instance_valid(vehicle):
+			continue
+		var distance := p_pos.distance_to(vehicle.global_position)
+		if distance < 70.0:
+			candidates.append({"vehicle": vehicle, "distance": distance})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["distance"]) < float(b["distance"]))
+	for vehicle in active_vehicles:
+		if is_instance_valid(vehicle):
+			vehicle.set_audio_focus(false)
+	for index in mini(6, candidates.size()):
+		var candidate: Dictionary = candidates[index]
+		if float(candidate["distance"]) < 55.0:
+			(candidate["vehicle"] as VehicleTrafficController).set_audio_focus(true)
 
 func _cull_distant_vehicles() -> void:
 	var p_pos := player_ref.global_position

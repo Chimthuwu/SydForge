@@ -4,6 +4,9 @@ config_version=5
 config/name="Splooge"
 run/main_scene="res://scenes/main.tscn"
 
+[autoload]
+AudioDirector="*res://scripts/audio_manager.gd"
+
 [display]
 window/size/viewport_width=1280
 window/size/viewport_height=720

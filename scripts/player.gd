@@ -3,12 +3,16 @@ extends CharacterBody3D
 
 const WEAPON_PISTOL := 0
 const WEAPON_SHOTGUN := 1
+const WEAPON_SMG := 2
 
 var health: float = 100.0
 var ammo: int = 12
 var shotgun_ammo: int = 6
+var smg_ammo: int = 30
 var reload_time: float = 0.0
 var shotgun_reload_time: float = 0.0
+var smg_reload_time: float = 0.0
+var weapon_switch_time: float = 0.0
 var fire_time: float = 0.0
 var melee_time: float = 0.0
 var vehicle: CharacterBody3D
@@ -21,8 +25,11 @@ var bonus_reputation: int = 0
 var stride: float = 0
 var coyote_time: float = 0
 var jump_buffer: float = 0
+var air_jumps_left: int = 1
 var aiming: bool = false
 var current_weapon: int = WEAPON_PISTOL
+var flashlight: SpotLight3D
+var flashlight_on: bool = false
 
 ## Tallest obstacle the controller climbs without jumping. The Opera House
 ## podium risers are 0.5 m, so 0.6 m clears them with margin while a 0.7 m curb
@@ -53,10 +60,15 @@ func _physics_process(dt: float) -> void:
 	invulnerable = maxf(0,invulnerable-dt)
 	fire_time = maxf(0,fire_time-dt)
 	melee_time = maxf(0,melee_time-dt)
+	weapon_switch_time = maxf(0.0,weapon_switch_time-dt)
 	if shotgun_reload_time > 0.0:
 		shotgun_reload_time = maxf(0.0,shotgun_reload_time-dt)
 		if shotgun_reload_time <= 0.0:
 			shotgun_ammo = 6
+	if smg_reload_time > 0.0:
+		smg_reload_time = maxf(0.0,smg_reload_time-dt)
+		if smg_reload_time <= 0.0:
+			smg_ammo = 30
 	if reload_time > 0:
 		reload_time -= dt
 		if reload_time <= 0:
@@ -69,17 +81,25 @@ func _physics_process(dt: float) -> void:
 	var input := Input.get_vector("left","right","forward","back")
 	var direction := Vector3(input.x,0,input.y).rotated(Vector3.UP,world.rig.yaw)
 	aiming = Input.is_action_pressed("aim")
-	var speed := 3.5 if aiming else (10.0 if Input.is_action_pressed("sprint") else 6.0)
-	velocity.x = move_toward(velocity.x,direction.x*speed,30*dt)
-	velocity.z = move_toward(velocity.z,direction.z*speed,30*dt)
+	# Fast, immediate movement with a little retained air momentum.
+	var speed := 4.2 if aiming else (11.2 if Input.is_action_pressed("sprint") else 6.4)
+	var accel := 46.0 if is_on_floor() else 22.0
+	velocity.x = move_toward(velocity.x,direction.x*speed,accel*dt)
+	velocity.z = move_toward(velocity.z,direction.z*speed,accel*dt)
+	if is_on_floor():
+		air_jumps_left = 1
 	coyote_time = 0.12 if is_on_floor() else maxf(0,coyote_time-dt)
 	jump_buffer = 0.12 if Input.is_action_just_pressed("jump") else maxf(0,jump_buffer-dt)
 	if jump_buffer > 0 and coyote_time > 0:
-		velocity.y = 8.0
+		velocity.y = 9.4
 		jump_buffer = 0
 		coyote_time = 0
+	elif jump_buffer > 0 and air_jumps_left > 0:
+		velocity.y = 8.8
+		air_jumps_left -= 1
+		jump_buffer = 0
 	elif not is_on_floor():
-		velocity.y -= 24*dt
+		velocity.y -= 26*dt
 	var grounded := is_on_floor()
 	# Snapping is effectively off while rising so a jump is never pulled back to
 	# the floor, and long while walking so stairs are followed downhill.
@@ -139,13 +159,16 @@ func shoot() -> void:
 	if current_weapon == WEAPON_SHOTGUN:
 		shoot_shotgun()
 		return
-	if fire_time > 0 or reload_time > 0 or vehicle != null:
+	if current_weapon == WEAPON_SMG:
+		shoot_smg()
+		return
+	if fire_time > 0 or reload_time > 0 or vehicle != null or weapon_switch_time > 0:
 		return
 	if ammo == 0:
 		reload()
 		return
 	ammo -= 1
-	fire_time = 0.23
+	fire_time = 0.11
 	var camera: Camera3D = world.rig.camera
 	var origin := camera.global_position
 	var end := origin - camera.global_basis.z*150
@@ -160,27 +183,32 @@ func shoot() -> void:
 	if not obstruction.is_empty():
 		hit = obstruction
 		end = hit.position
+	var hit_actor := false
 	if not hit.is_empty() and (
 		hit.collider.has_method("take_damage_at") or hit.collider.has_method("take_damage")
 	):
 		_apply_weapon_hit(hit.collider,25.0,end,1.0,-camera.global_basis.z)
 		world.hit_time = 0.18
+		hit_actor = true
 	if not hit.is_empty():
 		world.impact(end)
-	world.rig.recoil = 0.018
+		var audio := get_node_or_null("/root/AudioDirector")
+		if audio != null:
+			audio.play_impact("flesh" if hit_actor else "concrete",end)
+	world.rig.recoil = 0.020
 	world.rig.show_muzzle_flash()
-	world.impact(muzzle,Color("fff2a1"),0.13)
+	world.impact(muzzle,Color("fff2a1"),0.10)
 	world.tracer(muzzle,end,Color("fff2a1"))
-	world.gunshot(false)
+	world.gunshot("pistol")
 
 func shoot_shotgun() -> void:
-	if fire_time > 0.0 or shotgun_reload_time > 0.0 or vehicle != null:
+	if fire_time > 0.0 or shotgun_reload_time > 0.0 or vehicle != null or weapon_switch_time > 0.0:
 		return
 	if shotgun_ammo <= 0:
 		reload()
 		return
 	shotgun_ammo -= 1
-	fire_time = 0.72
+	fire_time = 0.46
 	var camera: Camera3D = world.rig.camera
 	var muzzle: Vector3 = world.rig.muzzle_position()
 	var base_direction: Vector3 = -camera.global_basis.z
@@ -221,9 +249,50 @@ func shoot_shotgun() -> void:
 			1.2 + float(pellet_count) * 0.18,result["direction"]
 		)
 		world.hit_time = 0.18
-	world.rig.recoil = 0.085
+	world.rig.recoil = 0.075
 	world.rig.show_muzzle_flash()
-	world.gunshot(true)
+	var audio := get_node_or_null("/root/AudioDirector")
+	if audio != null:
+		audio.play_impact("flesh" if not pellet_hits.is_empty() else "concrete",muzzle + base_direction * 2.0)
+	world.gunshot("shotgun")
+
+## Compact SMG: fast automatic fire, low per-shot recoil, clear short-range
+## identity. Nine-millimetre supplier from the shared asset index is represented
+## through silhouette and behaviour; no external audio is required.
+func shoot_smg() -> void:
+	if fire_time > 0.0 or smg_reload_time > 0.0 or vehicle != null or weapon_switch_time > 0.0:
+		return
+	if smg_ammo <= 0:
+		reload()
+		return
+	smg_ammo -= 1
+	fire_time = 0.055
+	var camera: Camera3D = world.rig.camera
+	var muzzle: Vector3 = world.rig.muzzle_position()
+	var direction := (
+		-camera.global_basis.z
+		+ camera.global_basis.x * randf_range(-0.012,0.012)
+		+ camera.global_basis.y * randf_range(-0.010,0.010)
+	).normalized()
+	var end := muzzle + direction * 130.0
+	var query := PhysicsRayQueryParameters3D.create(muzzle,end,1,[get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	var hit_actor := false
+	if not hit.is_empty():
+		end = hit.position
+		if hit.collider.has_method("take_damage_at") or hit.collider.has_method("take_damage"):
+			_apply_weapon_hit(hit.collider,15.0,end,0.8,direction)
+			world.hit_time = 0.14
+			hit_actor = true
+		world.impact(end,Color("ffd58a"),0.07)
+		var audio := get_node_or_null("/root/AudioDirector")
+		if audio != null:
+			audio.play_impact("flesh" if hit_actor else "concrete",end)
+	world.rig.recoil = 0.008
+	world.rig.show_muzzle_flash()
+	if smg_ammo % 3 == 0:
+		world.tracer(muzzle,end,Color("ffe6a8"))
+	world.gunshot("smg")
 
 func _apply_weapon_hit(
 	target: Object,
@@ -240,26 +309,68 @@ func _apply_weapon_hit(
 func equip_weapon(weapon: int) -> void:
 	if vehicle != null:
 		return
-	current_weapon = WEAPON_SHOTGUN if weapon == WEAPON_SHOTGUN else WEAPON_PISTOL
+	var next := WEAPON_PISTOL
+	if weapon == WEAPON_SHOTGUN:
+		next = WEAPON_SHOTGUN
+	elif weapon == WEAPON_SMG:
+		next = WEAPON_SMG
+	if next != current_weapon:
+		current_weapon = next
+		fire_time = 0.0
+		weapon_switch_time = 0.18
+
+func cycle_weapon(direction: int = 1) -> void:
+	equip_weapon((current_weapon + direction + 3) % 3)
+
+
+func toggle_flashlight() -> void:
+	if flashlight == null:
+		flashlight = SpotLight3D.new()
+		flashlight.name = "PlayerFlashlight"
+		flashlight.spot_range = 34.0
+		flashlight.spot_angle = 34.0
+		flashlight.light_color = Color("fff3dd")
+		flashlight.light_energy = 0.0
+		flashlight.shadow_enabled = false
+		world.rig.camera.add_child(flashlight)
+	flashlight_on = not flashlight_on
+	flashlight.visible = flashlight_on
+	flashlight.light_energy = 3.2 if flashlight_on else 0.0
 
 func is_shotgun_equipped() -> bool:
 	return current_weapon == WEAPON_SHOTGUN
 
+func is_smg_equipped() -> bool:
+	return current_weapon == WEAPON_SMG
+
 func weapon_status_text() -> String:
 	if is_shotgun_equipped():
 		return "12-GAUGE  %02d / 06" % shotgun_ammo
+	if is_smg_equipped():
+		return "SMG  %02d / 30" % smg_ammo
 	return "9MM  %02d / ∞" % ammo
 
 func current_reload_time() -> float:
-	return shotgun_reload_time if is_shotgun_equipped() else reload_time
+	if is_shotgun_equipped():
+		return shotgun_reload_time
+	if is_smg_equipped():
+		return smg_reload_time
+	return reload_time
 
 func current_reload_duration() -> float:
-	return 2.2 if is_shotgun_equipped() else 1.25
+	if is_shotgun_equipped():
+		return 2.2
+	if is_smg_equipped():
+		return 1.55
+	return 1.25
 
 func reload() -> void:
 	if is_shotgun_equipped():
 		if shotgun_ammo < 6 and shotgun_reload_time <= 0.0:
 			shotgun_reload_time = 2.2
+	elif is_smg_equipped():
+		if smg_ammo < 30 and smg_reload_time <= 0.0:
+			smg_reload_time = 1.55
 	elif ammo < 12 and reload_time <= 0:
 		reload_time = 1.25
 
@@ -315,6 +426,10 @@ func respawn() -> void:
 	jump_buffer = 0
 	health = 100
 	ammo = 12
+	shotgun_ammo = 6
+	smg_ammo = 30
 	reload_time = 0
+	shotgun_reload_time = 0
+	smg_reload_time = 0
 	invulnerable = 3.0
 	world.message = "BACK IN BUSINESS · health restored"

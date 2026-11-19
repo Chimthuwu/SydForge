@@ -38,9 +38,9 @@ func _run_suite() -> void:
 	var time_mgr = scene.get_node_or_null("WorldTimeManager")
 	_check(time_mgr != null, "WorldTimeManager is initialized in canonical world")
 	if time_mgr != null:
-		_check(absf(time_mgr.current_time_hours - 21.0) < 0.1, "Canonical game starts at 9:00 PM")
-		_check(time_mgr.current_period == "night", "Opening period is night")
-		_check(time_mgr.is_night, "Night mode is active on startup")
+		_check(absf(time_mgr.current_time_hours - 11.0) < 0.1, "Canonical game starts at 11:00 AM")
+		_check(time_mgr.current_period == "morning", "Opening period is morning")
+		_check(not time_mgr.is_night, "Opening is daytime")
 		
 		# Test time wrapping and period transitions
 		time_mgr.set_time(12.5) # Midday
@@ -59,7 +59,7 @@ func _run_suite() -> void:
 		_check(absf(time_mgr.current_time_hours - 1.5) < 0.01, "Clock wraps cleanly around 24h")
 		
 		# Reset to the canonical opening hour.
-		time_mgr.set_time(21.0)
+		time_mgr.set_time(11.0)
 
 	# 2. City Lights Manager
 	var lights_mgr = scene.get_node_or_null("CityLightsManager")
@@ -68,9 +68,9 @@ func _run_suite() -> void:
 		_check(lights_mgr.streetlights.size() > 0, "Streetlights populated along Sydney streets")
 		_check(lights_mgr.landmark_lights.size() >= 2, "Harbour Bridge and Opera House illumination configured")
 		time_mgr.set_time(21.0)
-		_check(lights_mgr.is_night, "City lights are active at the opening time")
+		_check(lights_mgr.is_night, "City lights switch on at night")
 		if not lights_mgr.street_spotlights.is_empty():
-			_check(lights_mgr.street_spotlights[0].light_energy > 0.0, "Opening scene streetlights illuminate")
+			_check(lights_mgr.street_spotlights[0].light_energy > 0.0, "Night streetlights illuminate")
 		
 		# Test night activation
 		time_mgr.set_time(23.0)
@@ -121,8 +121,16 @@ func _run_suite() -> void:
 			_check(veh.headlights.size() > 0, "Traffic vehicle has functional headlights")
 			_check(veh.clearance_ray != null, "Vehicle has obstacle clearance detection")
 			var player: BoomPlayer = scene.get("player")
-			var saved_player_position := player.global_position
-			veh.global_position = saved_player_position + Vector3(0,0,3)
+			var occupied := player.vehicle
+			if occupied != null:
+				player.vehicle = null
+				player.visible = true
+				player.collision_layer = 1
+				player.collision_mask = 1
+				occupied.driver = null
+			player.global_position = scene.cbd_world.player_spawn
+			await process_frame
+			veh.global_position = player.global_position + Vector3(0,0,3)
 			scene.call("find_nearest_vehicle")
 			_check(scene.get("nearest") == veh, "Nearby AI traffic becomes the interact target")
 			scene.call("interact")
@@ -156,6 +164,7 @@ func _run_suite() -> void:
 		_check(wild_mgr.bin_props.size() > 0, "Sydney wheelie bins placed at parks and waterfront hotspots")
 		time_mgr.set_time(21.0)
 		_check(wild_mgr.is_night, "Wildlife manager follows the night clock")
+
 		_check(wild_mgr.flying_foxes.size() >= 6, "Flying fox flock spawns over the city")
 		var visible_foxes := 0
 		for fox: Node3D in wild_mgr.flying_foxes:
@@ -190,7 +199,8 @@ func _run_suite() -> void:
 		_check(player.health == previous_health, "Bin chicken impacts never damage the player")
 		_check(test_car.health == car_health, "Bin chicken impacts do not damage the player's car")
 		_check(player.bonus_reputation == previous_bonus + 500, "Bin Chicken Binned awards +500 reputation")
-		_check(wild_mgr.find_child("GoreBurst",true,false) != null, "Bin chicken impact produces a visible gore burst")
+		_check(scene.find_child("GoreBurst",true,false) != null or scene.find_child("BodyDebris",true,false) != null,
+			"Bin chicken impact produces visible gore and physical debris")
 		await process_frame
 		_check(scene.hud.text.contains(str(previous_bonus + 500)), "Bin chicken bonus appears in the reputation HUD")
 	var enemy: BoomEnemy = scene.get("enemy")

@@ -53,6 +53,11 @@ func _physics_process(dt: float) -> void:
 			if cooldown <= 0:
 				player.take_damage(8)
 				get_parent().tracer(global_position+Vector3.UP*1.4,player.global_position+Vector3.UP,Color("ff6473"))
+				# Distant enemy report through the world pool, not the player's own
+				# weapon voice, so incoming fire has a clear 3D direction.
+				var audio := get_node_or_null("/root/AudioDirector")
+				if audio != null:
+					audio.play_weapon_world("pistol",global_position+Vector3.UP*1.4)
 				cooldown = 1.3
 	elif dist <= 2 and cooldown <= 0:
 		player.take_damage(12)

@@ -7,9 +7,9 @@ render_mode blend_mix, depth_draw_opaque, cull_disabled, diffuse_lambert, specul
 // a few degrees so the sun glint and sky ambient break gently across the
 // surface. Vertex colours carry the patchy brightness variation.
 
-uniform vec3 water_color : source_color = vec3(0.118, 0.337, 0.471); // #1e5678 deep harbour blue
-uniform float water_roughness : hint_range(0.05, 1.0) = 0.38;
-uniform float water_specular : hint_range(0.0, 1.0) = 0.32;
+uniform vec3 water_color : source_color = vec3(0.072, 0.212, 0.292); // deep, slightly green harbour water
+uniform float water_roughness : hint_range(0.05, 1.0) = 0.30;
+uniform float water_specular : hint_range(0.0, 1.0) = 0.22;
 uniform float wave_strength : hint_range(0.0, 0.3) = 0.07;
 uniform float wave_scale : hint_range(0.01, 0.5) = 0.06;
 uniform float wave_speed : hint_range(0.0, 2.0) = 0.45;

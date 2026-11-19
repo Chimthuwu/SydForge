@@ -10,6 +10,10 @@ var exhaust: Array[MeshInstance3D]        # 3 orange flame boxes at the tail
 var tail_glow: OmniLight3D               # soft glow near the tail
 var drift_smoke: MeshInstance3D           # puff behind the rear axle
 var brake_flash: OmniLight3D             # bright amber when braking
+var explosion_root: Node3D
+var explosion_light: OmniLight3D
+var _explosion_time: float = 0.0
+const EXPLOSION_DURATION := 2.6
 
 
 func _init(owner: ArcadeCar) -> void:
@@ -44,7 +48,61 @@ func _init(owner: ArcadeCar) -> void:
 	brake_flash.visible = false
 
 
+func play_explosion() -> void:
+	if explosion_root != null:
+		return
+	_explosion_time = EXPLOSION_DURATION
+	explosion_root = Node3D.new()
+	explosion_root.name = "VehicleExplosion"
+	parent.add_child(explosion_root)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(Time.get_ticks_usec())
+	var flame_colors := [Color("fff2a8"), Color("ffb02e"), Color("e0431a"), Color("8c1f12")]
+	for index in 26:
+		var fragment := MeshInstance3D.new()
+		var flame := SphereMesh.new()
+		flame.radius = rng.randf_range(0.18, 0.52)
+		flame.height = flame.radius * 2.0
+		flame.radial_segments = 8
+		flame.rings = 4
+		fragment.mesh = flame
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = flame_colors[index % flame_colors.size()]
+		mat.emission_enabled = true
+		mat.emission = flame_colors[index % flame_colors.size()]
+		mat.emission_energy_multiplier = 2.4
+		fragment.material_override = mat
+		explosion_root.add_child(fragment)
+		var direction := Vector3(
+			rng.randf_range(-1.0, 1.0),
+			rng.randf_range(-0.1, 1.4),
+			rng.randf_range(-1.0, 1.0)
+		).normalized()
+		var distance := rng.randf_range(0.8, 3.4)
+		var flight := rng.randf_range(0.4, 1.1)
+		var start := fragment.position
+		var finish := start + direction * distance + Vector3.DOWN * 0.4
+		var tween := explosion_root.create_tween()
+		tween.parallel().tween_property(fragment, "position", finish, flight)
+		tween.parallel().tween_property(fragment, "scale", Vector3.ZERO, flight + 0.4)
+		tween.tween_callback(fragment.queue_free)
+	explosion_light = OmniLight3D.new()
+	explosion_light.name = "ExplosionLight"
+	explosion_light.light_color = Color("ff8a32")
+	explosion_light.light_energy = 9.0
+	explosion_light.omni_range = 22.0
+	explosion_light.shadow_enabled = false
+	explosion_root.add_child(explosion_light)
+
+
 func update(dt: float, car: ArcadeCar) -> void:
+	if _explosion_time > 0.0:
+		_explosion_time = maxf(0.0, _explosion_time - dt)
+		if explosion_light != null and is_instance_valid(explosion_light):
+			explosion_light.light_energy = 9.0 * (_explosion_time / EXPLOSION_DURATION)
+		if _explosion_time <= 0.0 and explosion_root != null and is_instance_valid(explosion_root):
+			explosion_root.queue_free()
+			explosion_root = null
 	## Exhaust: brightened pulse during boost, dim when off.
 	var on := car.boost_on and car.driver != null
 	for flame in exhaust:
