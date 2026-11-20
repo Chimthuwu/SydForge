@@ -1,10 +1,10 @@
 extends Node3D
 
-## Static double-track route and station shells for the Sydney intercity rail
-## corridor. The sourced alignment runs Milsons Point–Wynyard–Town Hall–Central–
-## Redfern; the existing HarbourBridge module supplies the elevated bridge rails.
-## Tunnel depths, station interiors and parallel-track spacing are authored
-## presentation, not surveyed elevations.
+## Double-track route, station shells, and authored tunnel/portal structures for
+## the Sydney intercity rail corridor. The sourced alignment runs Milsons Point–
+## Wynyard–Town Hall–Central–Redfern; the existing HarbourBridge module supplies
+## the elevated bridge rails. Tunnel bores, depths, station interiors and
+## parallel-track spacing are authored presentation, not surveyed elevations.
 
 const DATA_PATH := "res://sydney/railway/milsons_redfern.json"
 const ART := preload("res://scripts/art.gd")
@@ -24,6 +24,18 @@ var _bridge_range := Vector2i(-1, -1)
 var _stations: Array[Dictionary] = []
 var _bridge: Node3D
 
+var _tunnel_light_records: Array[Dictionary] = []
+var _active_tunnel_lights: Array[OmniLight3D] = []
+var _active_tunnel_lamps: Array[MeshInstance3D] = []
+var _player_ref: Node3D
+var _tunnel_light_timer: float = 0.0
+const ACTIVE_TUNNEL_LIGHTS := 14
+const TUNNEL_LIGHT_RANGE := 90.0
+
+
+func _ready() -> void:
+	set_process(false)
+
 
 func build(world_data: Dictionary, harbour_bridge: Node3D) -> bool:
 	_bridge = harbour_bridge
@@ -38,12 +50,15 @@ func build(world_data: Dictionary, harbour_bridge: Node3D) -> bool:
 	_apply_station_elevations()
 	_index_station_route_positions()
 	_build_track_meshes()
+	_build_tunnel_enclosures()
 	_build_stations(world_data)
 	stats = {
 		"stations": station_nodes.size(),
 		"routePoints": main_route_points.size(),
 		"sourceWays": _ways_by_id.size(),
 		"tunnelWays": _count_way_tag("tunnel", "yes"),
+		"tunnelSegments": _count_tunnel_segments(),
+		"tunnelLightFixtures": _tunnel_light_records.size(),
 		"bridgeIntegration": _bridge_range.y > _bridge_range.x,
 		"mainRouteLengthM": _route_length(main_route_points),
 		"trackGaugeM": TRACK_GAUGE,
@@ -251,11 +266,31 @@ func _apply_station_elevations() -> void:
 		push_error("CbdRailNetwork: station order along route is invalid")
 		return
 
-	_set_route_elevation(0, _bridge_range.x, 0.1, main_route_points[_bridge_range.x].y)
-	# The bridge keeps its authored height profile.
-	for index in range(_bridge_range.y + 1, wynyard_index + 1):
-		var t := _distance_fraction(_bridge_range.y, wynyard_index, index)
-		main_route_points[index].y = lerpf(0.1, -10.0, t)
+	# Milsons Point is an elevated north-shore station connecting to the
+	# Harbour Bridge approach. Keep it above local terrain and aligned with the
+	# authored elevated station interior, then blend into the bridge profile.
+	var milsons_elevation := 12.0
+	_set_route_elevation(0, _bridge_range.x, milsons_elevation, main_route_points[_bridge_range.x].y)
+	# The bridge keeps its authored height profile. Smooth the bridge entry to
+	# avoid a steep single-segment jump when the approach meets bridge geometry.
+	if _bridge_range.x > 0 and _bridge_range.x + 1 < main_route_points.size():
+		var prev_y := main_route_points[_bridge_range.x - 1].y
+		var next_y := main_route_points[_bridge_range.x + 1].y
+		main_route_points[_bridge_range.x].y = lerpf(prev_y, next_y, 0.5)
+
+	# Southern bridge approach: hold near surface briefly after the bridge, pass
+	# through a portal/descent zone, then enter the underground bore to Wynyard.
+	# This avoids the track diving through surface terrain/buildings immediately
+	# after the bridge while still reaching the underground station level.
+	var descent_start := mini(_bridge_range.y + 8, wynyard_index)
+	var portal_index := mini(_bridge_range.y + 22, wynyard_index)
+	var tunnel_entry_index := mini(_bridge_range.y + 34, wynyard_index)
+	var bridge_exit_y := main_route_points[_bridge_range.y].y
+	_set_route_elevation(_bridge_range.y, descent_start, bridge_exit_y, bridge_exit_y)
+	_set_route_elevation(descent_start, portal_index, bridge_exit_y, 0.15)
+	_set_route_elevation(portal_index, tunnel_entry_index, 0.15, -2.0)
+	_set_route_elevation(tunnel_entry_index, wynyard_index, -2.0, -10.0)
+
 	_set_route_elevation(wynyard_index, town_hall_index, -10.0, -10.0)
 	_set_route_elevation(town_hall_index, central_index, -10.0, 0.1)
 	_set_route_elevation(central_index, redfern_index, 0.1, 0.1)
@@ -430,20 +465,27 @@ func _build_stations(world_data: Dictionary) -> void:
 		station_nodes[station_id] = node
 		_build_station_shell(node, station, world_data)
 	_build_southern_bridge_portal()
+	_build_central_emergence_portal()
 
 
 func _build_southern_bridge_portal() -> void:
 	if _bridge_range.y < 0 or _bridge_range.y + 1 >= main_route_points.size():
 		return
-	var position := main_route_points[_bridge_range.y]
-	var forward := _route_direction(_bridge_range.y)
+	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
+	var portal_index := _bridge_range.y
+	if wynyard_idx > _bridge_range.y:
+		# Match the descent profile: approach stays open, portal sits where the
+		# corridor drops from near-surface grade into the enclosed bore.
+		portal_index = clampi(_bridge_range.y + 22, _bridge_range.y + 1, wynyard_idx - 1)
+	var position := main_route_points[portal_index]
+	var forward := _route_direction(portal_index)
 	var portal := Node3D.new()
 	portal.name = "WynyardRailTunnelPortal"
 	portal.position = position
 	portal.rotation.y = atan2(-forward.x, -forward.z)
 	add_child(portal)
-	# Twin heavy-rail mouths emerge from the Rocks approach. This is authored
-	# entrance dressing; the tunnel alignment itself remains below the surface.
+	# Twin heavy-rail mouths mark the transition from open approach into the
+	# enclosed underground bore toward Wynyard.
 	ART.box(portal, Vector3(0.0, 3.0, 0.55), Vector3(8.2, 6.2, 1.1), Color("77736a"))
 	for side in [-1.0, 1.0]:
 		ART.box(
@@ -458,22 +500,56 @@ func _build_southern_bridge_portal() -> void:
 	ART.label(portal, Vector3(0.0, 6.0, 0.0), "CITY RAIL TUNNEL", 24)
 
 
+func _build_central_emergence_portal() -> void:
+	var town_hall_idx := int(station_route_indices.get("town-hall", -1))
+	var central_idx := int(station_route_indices.get("central", -1))
+	if town_hall_idx < 0 or central_idx <= town_hall_idx:
+		return
+	# Place emergence portal where the ascent reaches near-surface grade.
+	var portal_idx := central_idx
+	for i in range(town_hall_idx, central_idx + 1):
+		if main_route_points[i].y >= -1.2:
+			portal_idx = i
+			break
+	var position := main_route_points[portal_idx]
+	var forward := _route_direction(portal_idx)
+	var portal := Node3D.new()
+	portal.name = "CentralRailEmergencePortal"
+	portal.position = position
+	portal.rotation.y = atan2(-forward.x, -forward.z)
+	add_child(portal)
+	ART.box(portal, Vector3(0.0, 2.8, 0.4), Vector3(8.4, 5.8, 1.0), Color("726d63"))
+	for side in [-1.0, 1.0]:
+		ART.box(
+			portal, Vector3(side * 1.95, 1.9, -0.05),
+			Vector3(2.3, 3.8, 0.08), Color("121a20")
+		)
+		ART.box(
+			portal, Vector3(side * 3.35, 2.0, 0.0),
+			Vector3(0.45, 4.1, 1.15), Color("a19782")
+		)
+	ART.box(portal, Vector3(0.0, 5.0, 0.0), Vector3(7.4, 0.42, 1.25), Color("b6aa90"))
+	ART.label(portal, Vector3(0.0, 5.7, 0.0), "RAIL TUNNEL EXIT", 22)
+
+
 func _build_station_shell(
 	parent: Node3D,
 	station: Dictionary,
 	world_data: Dictionary
 ) -> void:
 	var station_id := str(station.get("id", ""))
-	var underground := str(station.get("level", "")) == "underground"
-	var platform_y := -10.0 if underground else 0.25
 	var route_index := int(station_route_indices.get(station_id, 0))
+	var platform_anchor: Vector3 = main_route_points[route_index]
+	# Follow the authored route elevation (underground/tunnel/surface/approach)
+	# so stations like Milsons Point sit at track level instead of a fixed depth.
+	var platform_y := platform_anchor.y + 0.15
+	var below_ground := platform_y < -1.0
 	var forward := _route_direction(route_index)
 	var yaw := atan2(-forward.x, -forward.z)
 	var platform_length := 104.0 if station_id in ["central", "redfern"] else 86.0
 
 	var interior := Node3D.new()
 	interior.name = "PlatformLevel"
-	var platform_anchor: Vector3 = main_route_points[route_index]
 	interior.position = Vector3(
 		platform_anchor.x - parent.position.x,
 		platform_y,
@@ -483,8 +559,9 @@ func _build_station_shell(
 	parent.add_child(interior)
 	ART.box(
 		interior, Vector3(0.0, 0.12, 0.0),
-		Vector3(8.0, 0.24, platform_length), Color("72716b")
+		Vector3(8.0, 0.24, platform_length), Color("72716b"), true
 	)
+	_build_station_access(parent, station, interior, platform_y, below_ground)
 	for side in [-1.0, 1.0]:
 		ART.box(
 			interior, Vector3(side * 3.0, 0.08, 0.0),
@@ -494,7 +571,7 @@ func _build_station_shell(
 			interior, Vector3(side * 3.0, 0.2, -platform_length * 0.5 + 1.8),
 			Vector3(1.0, 0.12, 2.8), Color("e2c64d")
 		)
-	if underground:
+	if below_ground:
 		ART.box(
 			interior, Vector3(0.0, 4.0, 0.0),
 			Vector3(14.0, 0.55, platform_length + 8.0), Color("555c60")
@@ -575,6 +652,35 @@ func _build_station_entrances(
 		label.modulate = Color("fff4d8")
 
 
+## Short stair connection from an underground platform up toward the surface
+## entrance. Authored presentation only; it is intentionally simple so the
+## station shell stays readable and the surface street remains untouched.
+func _build_station_access(
+	parent: Node3D,
+	station: Dictionary,
+	interior: Node3D,
+	platform_y: float,
+	underground: bool,
+) -> void:
+	if not underground:
+		return
+	var surface_x := float(station.get("x", 0.0)) - parent.position.x
+	var surface_z := float(station.get("z", 0.0)) - parent.position.z
+	var steps := 22
+	for index in steps:
+		var t := float(index) / float(steps)
+		var y := lerpf(platform_y + 0.4, 0.0, t)
+		var x := lerpf(0.0, surface_x, t)
+		var z := lerpf(0.0, surface_z, t)
+		ART.box(interior, Vector3(x, y, z), Vector3(2.8, 0.22, 1.1), Color("8d897d"), true)
+	for side in [-1.0, 1.0]:
+		ART.box(
+			interior, Vector3(surface_x * 0.5 + side * 1.55, platform_y * 0.5 + 1.2, surface_z * 0.5),
+			Vector3(0.18, absf(platform_y) + 2.4, maxf(2.0, absf(surface_z) * 0.5)),
+			Color("6b6a63")
+		)
+
+
 func _route_direction(index: int) -> Vector3:
 	if main_route_points.size() < 2:
 		return Vector3(0.0, 0.0, -1.0)
@@ -602,3 +708,204 @@ func _count_way_tag(tag_name: String, expected: String) -> int:
 
 func get_station_route_index(station_id: String) -> int:
 	return int(station_route_indices.get(station_id, -1))
+
+
+func _count_tunnel_segments() -> int:
+	var count := 0
+	for i in range(main_route_points.size() - 1):
+		if _is_tunnel_segment(i):
+			count += 1
+	return count
+
+
+func _is_tunnel_segment(segment_index: int) -> bool:
+	if _is_bridge_segment(segment_index):
+		return false
+	var a := main_route_points[segment_index]
+	var b := main_route_points[segment_index + 1]
+	var mid_y := (a.y + b.y) * 0.5
+	# Leave gaps around station shells/interiors and portal approaches so
+	# authored station volumes and access points remain usable.
+	for station_id in station_route_indices.keys():
+		var idx := int(station_route_indices[station_id])
+		if absi(segment_index - idx) <= 10:
+			return false
+
+	# Southern bridge descent: the track dives from surface/approach level into
+	# the underground bore between the Harbour Bridge and Wynyard. Enclose this
+	# transition once it drops below grade so the train does not pass through
+	# ground/buildings, while keeping the immediate portal mouth open.
+	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
+	if _bridge_range.y >= 0 and wynyard_idx > _bridge_range.y \
+	and segment_index > _bridge_range.y + 18 and segment_index < wynyard_idx - 10:
+		if mid_y <= 0.2:
+			return true
+
+	# Keep ascent/descent mouths slightly open near Central emergence.
+	var central_idx := int(station_route_indices.get("central", -1))
+	if central_idx >= 0 and segment_index >= central_idx - 8 and segment_index <= central_idx + 2:
+		return false
+
+	return mid_y <= -1.5
+
+
+func _build_tunnel_enclosures() -> void:
+	if main_route_points.size() < 2:
+		return
+	_tunnel_light_records.clear()
+
+	var wall_surface := SurfaceTool.new()
+	var ceiling_surface := SurfaceTool.new()
+	var detail_surface := SurfaceTool.new()
+	wall_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	ceiling_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	detail_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	var collision_root := StaticBody3D.new()
+	collision_root.name = "RailTunnelCollision"
+	add_child(collision_root)
+
+	var light_step := 18.0
+	var light_accum := 0.0
+	for i in range(main_route_points.size() - 1):
+		if not _is_tunnel_segment(i):
+			light_accum = 0.0
+			continue
+		var a := main_route_points[i]
+		var b := main_route_points[i + 1]
+		var direction := b - a
+		direction.y = 0.0
+		var length := direction.length()
+		if length < 0.1:
+			continue
+		direction /= length
+		var basis := _track_basis(direction)
+		var mid := (a + b) * 0.5
+		var track_y := (a.y + b.y) * 0.5
+		var tunnel_half_w := 5.4
+		var wall_thickness := 0.55
+		var wall_height := 6.8
+		var wall_center_y := track_y + wall_height * 0.5 - 0.15
+		var ceiling_y := track_y + wall_height - 0.2
+
+		# Merged visual meshes (much cheaper than per-segment MeshInstance3D nodes).
+		var left_wall_pos := mid + basis.x * (-tunnel_half_w) + Vector3.UP * wall_center_y
+		var right_wall_pos := mid + basis.x * (tunnel_half_w) + Vector3.UP * wall_center_y
+		var ceiling_pos := mid + Vector3.UP * ceiling_y
+		var wall_size := Vector3(wall_thickness, wall_height, length + 0.05)
+		var ceiling_size := Vector3(tunnel_half_w * 2.0 + wall_thickness, 0.45, length + 0.05)
+		_emit_box(wall_surface, left_wall_pos, basis, wall_size, Vector3.UP)
+		_emit_box(wall_surface, right_wall_pos, basis, wall_size, Vector3.UP)
+		_emit_box(ceiling_surface, ceiling_pos, basis, ceiling_size, Vector3.UP)
+		_emit_box(
+			detail_surface,
+			mid + basis.x * (tunnel_half_w - 0.7) + Vector3.UP * (track_y + 0.45),
+			basis,
+			Vector3(0.7, 0.12, length + 0.05),
+			Vector3.UP
+		)
+
+		# Batched collision shapes keep enclosure solidity with far fewer nodes.
+		_add_collision_box(collision_root, left_wall_pos, basis, wall_size)
+		_add_collision_box(collision_root, right_wall_pos, basis, wall_size)
+		_add_collision_box(collision_root, ceiling_pos, basis, ceiling_size)
+
+		light_accum += length
+		if light_accum >= light_step:
+			light_accum = 0.0
+			_tunnel_light_records.append({
+				"position": mid + Vector3.UP * (ceiling_y - 0.45),
+				"lamp_position": mid + Vector3.UP * (ceiling_y - 0.28),
+				"yaw": atan2(-direction.x, -direction.z),
+			})
+
+	_commit_mesh("RailTunnelWalls", wall_surface, Color("47443f"), 0.95)
+	_commit_mesh("RailTunnelCeiling", ceiling_surface, Color("3f3d39"), 0.96)
+	_commit_mesh("RailTunnelDetails", detail_surface, Color("5a5750"), 0.9)
+	_setup_tunnel_lights()
+
+
+func _add_collision_box(parent: StaticBody3D, center: Vector3, basis: Basis, size: Vector3) -> void:
+	var shape_node := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	shape_node.shape = shape
+	shape_node.transform = Transform3D(basis, center)
+	parent.add_child(shape_node)
+
+
+func _setup_tunnel_lights() -> void:
+	if _tunnel_light_records.is_empty():
+		return
+	var lamp_mesh := BoxMesh.new()
+	lamp_mesh.size = Vector3(1.4, 0.08, 0.35)
+	var lamp_mat := StandardMaterial3D.new()
+	lamp_mat.albedo_color = Color("efe6d0")
+	lamp_mat.emission_enabled = true
+	lamp_mat.emission = Color("fff0c8")
+	lamp_mat.emission_energy_multiplier = 1.6
+	var pool := Node3D.new()
+	pool.name = "RailTunnelLights"
+	add_child(pool)
+	for i in ACTIVE_TUNNEL_LIGHTS:
+		var lamp := MeshInstance3D.new()
+		lamp.name = "TunnelLamp%02d" % i
+		lamp.mesh = lamp_mesh
+		lamp.material_override = lamp_mat
+		lamp.visible = false
+		pool.add_child(lamp)
+		_active_tunnel_lamps.append(lamp)
+
+		var light := OmniLight3D.new()
+		light.name = "TunnelLight%02d" % i
+		light.light_color = Color("fff2d6")
+		light.light_energy = 0.75
+		light.omni_range = 14.0
+		light.shadow_enabled = false
+		light.visible = false
+		pool.add_child(light)
+		_active_tunnel_lights.append(light)
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	_tunnel_light_timer += delta
+	if _tunnel_light_timer < 0.25:
+		return
+	_tunnel_light_timer = 0.0
+	_update_tunnel_lights()
+
+
+func _update_tunnel_lights() -> void:
+	if _tunnel_light_records.is_empty() or _active_tunnel_lights.is_empty():
+		return
+	if _player_ref == null or not is_instance_valid(_player_ref):
+		_player_ref = get_tree().get_first_node_in_group("player") as Node3D
+	if _player_ref == null or not is_instance_valid(_player_ref):
+		return
+	var player_pos := _player_ref.global_position
+	var candidates: Array[Dictionary] = []
+	for record in _tunnel_light_records:
+		var pos: Vector3 = record["position"]
+		var d2 := player_pos.distance_squared_to(pos)
+		if d2 > TUNNEL_LIGHT_RANGE * TUNNEL_LIGHT_RANGE:
+			continue
+		candidates.append({"d2": d2, "record": record})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["d2"]) < float(b["d2"])
+	)
+	for i in _active_tunnel_lights.size():
+		var light := _active_tunnel_lights[i]
+		var lamp := _active_tunnel_lamps[i] if i < _active_tunnel_lamps.size() else null
+		if i >= candidates.size():
+			light.visible = false
+			if lamp != null:
+				lamp.visible = false
+			continue
+		var rec: Dictionary = candidates[i]["record"]
+		light.global_position = rec["position"]
+		light.visible = true
+		if lamp != null:
+			lamp.global_position = rec["lamp_position"]
+			lamp.rotation.y = float(rec["yaw"])
+			lamp.visible = true

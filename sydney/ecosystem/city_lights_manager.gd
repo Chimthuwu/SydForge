@@ -28,6 +28,8 @@ var _window_materials: Array[StandardMaterial3D] = []
 var _landmark_materials: Array[Dictionary] = []
 var _vehicle_lights: Array[Dictionary] = []
 var _lamp_head_material: StandardMaterial3D
+var _facade_materials: Array[ShaderMaterial] = []
+var _street_base_energies: Array[float] = []
 var _update_timer: float = 0.0
 var _building_grid: Dictionary = {}
 var _occupied_light_cells: Dictionary = {}
@@ -50,12 +52,21 @@ func setup(world: SydneyWorld, player: Node3D, vehicles: Array = []) -> void:
 	_generate_streetlights()
 	_setup_window_illumination()
 	_setup_landmark_illumination()
+	_cache_facade_materials()
 	for vehicle in vehicles:
 		if vehicle is Node3D:
 			_attach_player_vehicle_lights(vehicle as Node3D)
+	_select_nearby_streetlights()
+	_select_landmark_lights()
 	_apply_lighting_factor(_lighting_factor)
-	_update_nearby_streetlights()
-	_update_landmark_lights()
+
+
+func _cache_facade_materials() -> void:
+	_facade_materials.clear()
+	for node in get_tree().get_nodes_in_group("facade_surfaces"):
+		var surface := node as MeshInstance3D
+		if surface != null and surface.material_override is ShaderMaterial:
+			_facade_materials.append(surface.material_override as ShaderMaterial)
 
 
 func _process(delta: float) -> void:
@@ -63,8 +74,10 @@ func _process(delta: float) -> void:
 	if _update_timer < 0.25:
 		return
 	_update_timer = 0.0
-	_update_nearby_streetlights()
-	_update_landmark_lights()
+	_select_nearby_streetlights()
+	_select_landmark_lights()
+	_apply_streetlight_energies()
+	_apply_landmark_energies()
 	_update_player_vehicle_visibility()
 
 
@@ -80,12 +93,10 @@ func _apply_lighting_factor(factor: float) -> void:
 	_lighting_factor = clampf(factor, 0.0, 1.0)
 	# Facade windows share one shader parameter instead of thousands of light
 	# nodes. Setting it here keeps day/night, dusk and dawn in one place.
-	for node in get_tree().get_nodes_in_group("facade_surfaces"):
-		var surface := node as MeshInstance3D
-		if surface != null and surface.material_override is ShaderMaterial:
-			(surface.material_override as ShaderMaterial).set_shader_parameter(
-				"night_factor", _lighting_factor
-			)
+	if _facade_materials.is_empty():
+		_cache_facade_materials()
+	for material in _facade_materials:
+		material.set_shader_parameter("night_factor", _lighting_factor)
 	if _lamp_head_material != null:
 		_lamp_head_material.emission_energy_multiplier = _lighting_factor * 3.2
 	for index in _window_materials.size():
@@ -93,8 +104,8 @@ func _apply_lighting_factor(factor: float) -> void:
 			float(WINDOW_EMISSION_LEVELS[index]) * _lighting_factor
 		)
 	for record: Dictionary in _landmark_materials:
-		var material := record["material"] as StandardMaterial3D
-		material.emission_energy_multiplier = float(record["energy"]) * _lighting_factor
+		var landmark_material := record["material"] as StandardMaterial3D
+		landmark_material.emission_energy_multiplier = float(record["energy"]) * _lighting_factor
 	for attachment: Dictionary in _vehicle_lights:
 		var spot := attachment["spot"] as SpotLight3D
 		var rear := attachment["rear"] as OmniLight3D
@@ -104,8 +115,9 @@ func _apply_lighting_factor(factor: float) -> void:
 			material.emission_energy_multiplier = 2.4 * _lighting_factor
 		for material: StandardMaterial3D in attachment["tail_materials"]:
 			material.emission_energy_multiplier = 1.8 * _lighting_factor
-	_update_nearby_streetlights()
-	_update_landmark_lights()
+	_apply_streetlight_energies()
+	_apply_landmark_energies()
+	_update_player_vehicle_visibility()
 
 
 func _generate_streetlights() -> void:
@@ -141,6 +153,7 @@ func _generate_streetlights() -> void:
 	if head_instance != null:
 		streetlights.append(head_instance)
 
+	_street_base_energies.clear()
 	for index in ACTIVE_STREETLIGHTS:
 		var spot := SpotLight3D.new()
 		spot.name = "ActiveStreetlight%02d" % index
@@ -153,6 +166,7 @@ func _generate_streetlights() -> void:
 		spot.visible = false
 		add_child(spot)
 		street_spotlights.append(spot)
+		_street_base_energies.append(0.0)
 
 
 func _add_road_fixtures() -> void:
@@ -396,7 +410,7 @@ func _fixture_basis(aim: Vector3) -> Basis:
 	return Basis(x_axis, Vector3.UP, x_axis.cross(Vector3.UP).normalized())
 
 
-func _update_nearby_streetlights() -> void:
+func _select_nearby_streetlights() -> void:
 	if _player_ref == null or street_spotlights.is_empty():
 		return
 	var player_position := _player_ref.global_position
@@ -419,9 +433,9 @@ func _update_nearby_streetlights() -> void:
 	)
 	for index in street_spotlights.size():
 		var light := street_spotlights[index]
-		if index >= candidates.size() or _lighting_factor <= 0.005:
+		if index >= candidates.size():
 			light.visible = false
-			light.light_energy = 0.0
+			_street_base_energies[index] = 0.0
 			continue
 		var record: Dictionary = candidates[index]
 		var position: Vector3 = record["position"]
@@ -430,8 +444,20 @@ func _update_nearby_streetlights() -> void:
 		light.global_position = head_position
 		light.look_at(position + aim * 4.0 + Vector3.UP * 0.1, Vector3.UP)
 		light.spot_range = float(record["range"])
-		light.light_energy = float(record["energy"]) * _lighting_factor
+		_street_base_energies[index] = float(record["energy"])
 		light.visible = true
+
+
+func _apply_streetlight_energies() -> void:
+	for index in street_spotlights.size():
+		var light := street_spotlights[index]
+		var base := _street_base_energies[index] if index < _street_base_energies.size() else 0.0
+		if base <= 0.0 or _lighting_factor <= 0.005:
+			light.visible = false
+			light.light_energy = 0.0
+		else:
+			light.visible = true
+			light.light_energy = base * _lighting_factor
 
 
 func _setup_window_illumination() -> void:
@@ -612,44 +638,58 @@ func _add_landmark_spot(
 		"position": position,
 		"energy": energy,
 		"range": range_m,
+		"base_energy": 0.0,
+		"active": false,
 	})
 
 
-func _update_landmark_lights() -> void:
+func _select_landmark_lights() -> void:
 	if _player_ref == null or _landmark_records.is_empty():
 		return
 	var candidates: Array[Dictionary] = []
 	var player_position := _player_ref.global_position
-	for record: Dictionary in _landmark_records:
+	for index in _landmark_records.size():
+		var record: Dictionary = _landmark_records[index]
 		var position: Vector3 = record["position"]
 		var distance_sq := Vector2(
 			position.x - player_position.x,
 			position.z - player_position.z
 		).length_squared()
 		if distance_sq <= 260.0 * 260.0:
-			var candidate := record.duplicate()
-			candidate["distance_sq"] = distance_sq
-			candidates.append(candidate)
+			candidates.append({
+				"index": index,
+				"distance_sq": distance_sq,
+			})
 	candidates.sort_custom(
 		func(a: Dictionary, b: Dictionary) -> bool:
 			return float(a["distance_sq"]) < float(b["distance_sq"])
 	)
-	var active_count := 0
 	for record: Dictionary in _landmark_records:
-		var light := record["light"] as SpotLight3D
-		light.visible = false
-		light.light_energy = 0.0
+		record["active"] = false
+		record["base_energy"] = 0.0
+	var active_count := 0
 	for candidate: Dictionary in candidates:
 		if active_count >= ACTIVE_LANDMARK_LIGHTS:
 			break
-		if _lighting_factor <= 0.005:
-			break
+		var index: int = candidate["index"]
 		var distance := sqrt(float(candidate["distance_sq"]))
-		var light := candidate["light"] as SpotLight3D
-		light.visible = true
-		light.light_energy = float(candidate["energy"]) * _lighting_factor \
-			* clampf(1.15 - distance / 520.0, 0.15, 1.0)
+		var record: Dictionary = _landmark_records[index]
+		record["active"] = true
+		record["base_energy"] = float(record["energy"]) * clampf(1.15 - distance / 520.0, 0.15, 1.0)
 		active_count += 1
+
+
+func _apply_landmark_energies() -> void:
+	for record: Dictionary in _landmark_records:
+		var light := record["light"] as SpotLight3D
+		var active := bool(record.get("active", false))
+		var base := float(record.get("base_energy", 0.0))
+		if not active or base <= 0.0 or _lighting_factor <= 0.005:
+			light.visible = false
+			light.light_energy = 0.0
+		else:
+			light.visible = true
+			light.light_energy = base * _lighting_factor
 
 
 func _attach_player_vehicle_lights(vehicle: Node3D) -> void:

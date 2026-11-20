@@ -32,6 +32,21 @@ func setup(world: SydneyWorld, player: Node3D) -> void:
 	_spawn_wheelie_bins()
 	_connect_world_time()
 	_spawn_flying_foxes()
+	_spawn_opening_bin_chickens()
+
+
+## The canonical opening is on the Harbour Bridge, far from the CBD bin spots.
+## Seed a few bin chickens near the player so they are visible from the first
+## frame; the normal habitat spawner keeps maintaining the population after.
+func _spawn_opening_bin_chickens() -> void:
+	if player_ref == null:
+		return
+	for index in 5:
+		var angle := TAU * float(index) / 5.0
+		var offset := Vector3(cos(angle), 0.0, sin(angle)) * (10.0 + float(index % 2) * 6.0)
+		var spawn_pos := player_ref.global_position + offset
+		spawn_pos.y = 0.2
+		_spawn_one(WildlifeController.WildlifeKind.IBIS, spawn_pos)
 
 func _connect_world_time() -> void:
 	var time_managers := get_tree().get_nodes_in_group("time_managers")

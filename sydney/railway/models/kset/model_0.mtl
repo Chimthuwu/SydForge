@@ -1,0 +1,9 @@
+newmtl kset_body
+Ka 1.000 1.000 1.000
+Kd 1.000 1.000 1.000
+Ks 0.25 0.25 0.25
+Ns 40
+map_Kd C3564_d.png
+map_Ka C3564_a.png
+map_Ks C3564_s.png
+map_bump C3564_n.png

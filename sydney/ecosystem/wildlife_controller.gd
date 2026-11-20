@@ -81,6 +81,9 @@ func _die(launch: Vector3) -> void:
 	if _vehicle_hit:
 		return
 	_vehicle_hit = true
+	var wanted := get_tree().get_first_node_in_group("wanted_system")
+	if wanted != null and kind == WildlifeKind.IBIS:
+		wanted.add_crime(5.0, "BIN CHICKEN SLAUGHTER · police alerted")
 	set_physics_process(false)
 	velocity = Vector3.ZERO
 	collision_layer = 0

@@ -239,11 +239,11 @@ func _build_shop(
 		ArtUtil.box(shop, Vector3(side * width * 0.5, 2.0, 0.10), Vector3(0.42, 4.0, 0.34), stone)
 		ArtUtil.box(shop, Vector3(side * width * 0.5, 4.08, 0.10), Vector3(0.52, 0.20, 0.42), trim)
 	# Recessed shop window and door.
-	ArtUtil.box(shop, Vector3(-width * 0.10, 1.42, 0.02), Vector3(width * 0.62, 2.24, 0.12), glass)
+	_box_mesh(shop, Vector3(-width * 0.10, 1.42, 0.02), Vector3(width * 0.62, 2.24, 0.12), glass)
 	ArtUtil.box(shop, Vector3(width * 0.31, 1.33, 0.03), Vector3(width * 0.20, 2.06, 0.14), Color("233a40"))
-	ArtUtil.box(shop, Vector3(width * 0.31, 1.33, 0.11), Vector3(width * 0.14, 1.72, 0.06), warm)
+	_box_mesh(shop, Vector3(width * 0.31, 1.33, 0.11), Vector3(width * 0.14, 1.72, 0.06), warm)
 	# Warm interior card behind the glazing reads as a lit shop at night.
-	ArtUtil.box(shop, Vector3(-width * 0.10, 1.45, -0.04), Vector3(width * 0.50, 1.82, 0.06), warm)
+	_box_mesh(shop, Vector3(-width * 0.10, 1.45, -0.04), Vector3(width * 0.50, 1.82, 0.06), warm)
 	for index in 3:
 		var x := -width * 0.10 + (float(index) - 1.0) * width * 0.18
 		ArtUtil.box(shop, Vector3(x, 1.42, 0.09), Vector3(0.09, 2.24, 0.08), Color("4e5b5c"))
@@ -286,8 +286,19 @@ func _build_shop(
 			break
 		ArtUtil.box(shop, Vector3(stripe_x, 2.61, 1.43), Vector3(0.34, 0.24, 0.04), lettering)
 	# Door step and a small opening-hours plate.
-	ArtUtil.box(shop, Vector3(width * 0.31, 2.62, 0.14), Vector3(width * 0.15, 0.24, 0.08), warm)
+	_box_mesh(shop, Vector3(width * 0.31, 2.62, 0.14), Vector3(width * 0.15, 0.24, 0.08), warm)
 	return shop
+
+
+func _box_mesh(parent: Node3D, position: Vector3, size: Vector3, material: Material) -> MeshInstance3D:
+	var instance := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = size
+	instance.mesh = box
+	instance.material_override = material
+	parent.add_child(instance)
+	instance.position = position
+	return instance
 
 
 func _material(color: Color, emission: Color = Color.BLACK, energy: float = 0.0) -> StandardMaterial3D:

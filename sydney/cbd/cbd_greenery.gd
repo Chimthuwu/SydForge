@@ -22,6 +22,7 @@ const STREET_TREE_SPACING := 19.0
 const STREET_TREE_OFFSET := 2.1
 const MAX_PARK_TREES := 7200
 const MAX_STREET_TREES := 2600
+const FOLIAGE_SHADER := preload("res://shaders/foliage.gdshader")
 const PARK_LANDMARK_CLEARINGS := [
 	[Vector2(332.0, -178.0), 52.0], # Archibald Fountain
 	[Vector2(270.0, -300.0), 24.0], # Hyde Park Obelisk
@@ -50,8 +51,12 @@ func build(parks: Array, roads: Array) -> Node3D:
 	trunks.instance_count = park_trees.size() + street_trees.size()
 	for index in trunks.instance_count:
 		var point: Vector3 = park_trees[index] if index < park_trees.size() else street_trees[index - park_trees.size()]
-		var scale := 0.82 + _hash01(trunks.instance_count * 17 + index) * 0.5
-		trunks.set_instance_transform(index, Transform3D(Basis.IDENTITY.scaled(Vector3(scale, scale, scale)), point))
+		var scale := 0.82 + _hash01(index * 31 + 7) * 0.5
+		# The cylinder is centred on its origin, so lift it by half its height;
+		# otherwise the bottom half of every trunk is buried under the park.
+		trunks.set_instance_transform(index, Transform3D(
+			Basis.IDENTITY.scaled(Vector3(scale, scale, scale)),
+			point + Vector3(0.0, 2.1 * scale, 0.0)))
 	trunk_count = trunks.instance_count
 	var trunk_instance := MultiMeshInstance3D.new()
 	trunk_instance.name = "TreeTrunks"
@@ -63,15 +68,18 @@ func build(parks: Array, roads: Array) -> Node3D:
 	canopies.use_colors = true
 	canopies.mesh = canopy_mesh
 	canopies.instance_count = trunks.instance_count
-	var greens := [Color("4a8a5c"), Color("3f7f55"), Color("5a9963"), Color("6aa86a"), Color("487d4e")]
+	var greens := [
+		Color("426f4b"), Color("4f7d4e"), Color("5e8656"),
+		Color("3d6547"), Color("6f8d5b"), Color("557347"),
+	]
 	for index in canopies.instance_count:
 		var point: Vector3 = park_trees[index] if index < park_trees.size() else street_trees[index - park_trees.size()]
 		var hash := _hash01(index * 31 + 7)
-		var scale := 0.85 + hash * 0.55
-		var lean := (hash - 0.5) * 0.12
+		var scale := 0.82 + hash * 0.5
+		var lean := (hash - 0.5) * 0.16
 		var basis := Basis.from_euler(Vector3(lean, hash * TAU, lean * 0.7)).scaled(Vector3(scale, scale, scale))
-		canopies.set_instance_transform(index, Transform3D(basis, point + Vector3(0, 4.4 * scale, 0)))
-		canopies.set_instance_color(index, greens[index % greens.size()].lightened(hash * 0.12))
+		canopies.set_instance_transform(index, Transform3D(basis, point + Vector3(0, 4.7 * scale, 0)))
+		canopies.set_instance_color(index, greens[index % greens.size()].lightened(hash * 0.16))
 	canopy_count = canopies.instance_count
 	var canopy_instance := MultiMeshInstance3D.new()
 	canopy_instance.name = "TreeCanopies"
@@ -184,29 +192,90 @@ func _street_trees(roads: Array) -> Array[Vector3]:
 func _trunk_mesh() -> Mesh:
 	var cylinder := CylinderMesh.new()
 	cylinder.top_radius = 0.16
-	cylinder.bottom_radius = 0.28
-	cylinder.height = 3.6
-	cylinder.radial_segments = 6
-	cylinder.rings = 1
+	cylinder.bottom_radius = 0.36
+	cylinder.height = 4.2
+	cylinder.radial_segments = 8
+	cylinder.rings = 2
 	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("7d5f47")
+	material.albedo_color = Color("6b503c")
 	material.roughness = 1.0
 	cylinder.material = material
 	return cylinder
 
 
+## A tree crown made from overlapping, slightly displaced ellipsoids. One
+## shared mesh keeps the MultiMesh cheap, while the lobes give a broken
+## silhouette instead of the old single faceted ball.
 func _canopy_mesh() -> Mesh:
-	var sphere := SphereMesh.new()
-	sphere.radius = 2.5
-	sphere.height = 4.6
-	sphere.radial_segments = 7
-	sphere.rings = 4
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.albedo_color = Color.WHITE
-	material.roughness = 0.95
-	sphere.material = material
-	return sphere
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_add_lobe(surface, Vector3(0.0, 0.0, 0.0), Vector3(2.85, 2.35, 2.6), 9, 5, 1.0)
+	_add_lobe(surface, Vector3(1.55, -0.35, 0.4), Vector3(1.8, 1.55, 1.7), 8, 4, 0.95)
+	_add_lobe(surface, Vector3(-1.5, 0.0, -0.55), Vector3(1.7, 1.5, 1.75), 8, 4, 0.94)
+	_add_lobe(surface, Vector3(0.2, 1.55, 0.1), Vector3(1.35, 1.2, 1.3), 8, 4, 1.04)
+	surface.generate_normals()
+	var mesh := surface.commit()
+	if mesh != null and mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, _foliage_material())
+	return mesh
+
+
+func _add_lobe(
+	surface: SurfaceTool,
+	center: Vector3,
+	radii: Vector3,
+	segments: int,
+	rings: int,
+	shade: float,
+) -> void:
+	var rows: Array = []
+	for ring in rings + 1:
+		var phi := PI * float(ring) / float(rings)
+		var row: Array[Vector3] = []
+		for segment in segments:
+			var theta := TAU * float(segment) / float(segments)
+			var direction := Vector3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta))
+			var wobble := 1.0 + 0.09 * sin(direction.x * 3.1 + direction.y * 2.3) \
+				+ 0.06 * cos(direction.z * 4.0 + direction.x * 1.7)
+			var point := center + Vector3(
+				direction.x * radii.x,
+				direction.y * radii.y,
+				direction.z * radii.z) * wobble
+			row.append(point)
+		rows.append(row)
+	for ring in rings:
+		for segment in segments:
+			var next := (segment + 1) % segments
+			var a: Vector3 = rows[ring][segment]
+			var b: Vector3 = rows[ring][next]
+			var c: Vector3 = rows[ring + 1][segment]
+			var d: Vector3 = rows[ring + 1][next]
+			_add_leaf_triangle(surface, a, b, c, center, radii, shade)
+			_add_leaf_triangle(surface, b, d, c, center, radii, shade)
+
+
+func _add_leaf_triangle(
+	surface: SurfaceTool,
+	a: Vector3,
+	b: Vector3,
+	c: Vector3,
+	center: Vector3,
+	radii: Vector3,
+	shade: float,
+) -> void:
+	if (b - a).cross(c - a).length() < 0.00001:
+		return
+	for point in [a, b, c]:
+		var up := clampf((point.y - center.y + radii.y) / (radii.y * 2.0), 0.0, 1.0)
+		var tone := clampf(0.58 + up * 0.42, 0.55, 1.05) * shade
+		surface.set_color(Color(tone, tone, tone))
+		surface.add_vertex(point)
+
+
+func _foliage_material() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = FOLIAGE_SHADER
+	return material
 
 
 func _bounds(polygon: PackedVector2Array) -> Rect2:

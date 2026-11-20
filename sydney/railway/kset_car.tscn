@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Mesh" uid="uid://3nfooyjb31x2" path="res://sydney/railway/models/kset/model_0.obj" id="1_model"]
+
+[node name="KSetCar" type="Node3D"]
+[node name="CarModel" parent="." type="MeshInstance3D"]
+mesh = ExtResource("1_model")

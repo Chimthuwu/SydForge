@@ -1,0 +1,68 @@
+{
+  "format": "splooge-sydney-fuel",
+  "formatVersion": 1,
+  "attribution": "OpenStreetMap contributors, ODbL 1.0. Positions from OSM amenity=fuel features via Nominatim; projected with the Stage B coordinate system.",
+  "source": "https://www.openstreetmap.org/copyright",
+  "stations": [
+    {
+      "osmType": "way",
+      "osmId": 1064477999,
+      "name": "BP",
+      "brand": "BP",
+      "lat": -33.8918512,
+      "lon": 151.2132593,
+      "x": 486.3,
+      "z": 2092.9
+    },
+    {
+      "osmType": "node",
+      "osmId": 4933504163,
+      "name": "BP Edgecliff",
+      "brand": "BP",
+      "lat": -33.8769635,
+      "lon": 151.2311575,
+      "x": 2141.1,
+      "z": 440.0
+    },
+    {
+      "osmType": "way",
+      "osmId": 589006423,
+      "name": "EG Ampol",
+      "brand": "Ampol",
+      "lat": -33.8922225,
+      "lon": 151.2161414,
+      "x": 752.8,
+      "z": 2134.1
+    },
+    {
+      "osmType": "way",
+      "osmId": 441148036,
+      "name": "Shell",
+      "brand": "Shell",
+      "lat": -33.88141,
+      "lon": 151.1966802,
+      "x": -1046.6,
+      "z": 933.7
+    },
+    {
+      "osmType": "way",
+      "osmId": 271040461,
+      "name": "Shell",
+      "brand": "Shell",
+      "lat": -33.8695654,
+      "lon": 151.221317,
+      "x": 1231.3,
+      "z": -381.3
+    },
+    {
+      "osmType": "node",
+      "osmId": 18825499,
+      "name": "Budget Petrol Chippendale",
+      "brand": "Budget Petrol",
+      "lat": -33.887697,
+      "lon": 151.2017056,
+      "x": -582.0,
+      "z": 1631.7
+    }
+  ]
+}

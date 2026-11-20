@@ -30,6 +30,8 @@ var loaded_path := ""
 var load_error := ""
 var landmark_podium := PackedVector2Array()
 
+static var _portal_meshes: Dictionary = {}
+
 
 func load_world(path: String = DEFAULT_PATH) -> bool:
 	load_error = ""
@@ -289,13 +291,109 @@ func _build_parks() -> void:
 
 
 func _build_roads() -> void:
-	# Tunnels remain in the data for lanes/navigation, but drawing their 2D
-	# ribbon on the surface would put a motorway through buildings.
+	# Surface roads are drawn as ribbons; tunnel-tagged roads are rendered as
+	# authored 3D tunnel structures below ground instead of being omitted.
 	# Roads that run under the Opera House podium are split there rather than
 	# drawn through the landmark shell.
 	var roads: Array = OperaHouseLandmark.filtered_roads(data.get("roads", []), landmark_podium)
 	var mesh := SydneyMesh.road_mesh(roads, data.get("junctions", []), 0.06, Color("30353a"))
 	_add_mesh("Roads", mesh)
+	_build_road_tunnels(roads)
+
+
+func _build_road_tunnels(roads: Array) -> void:
+	const TUNNEL_Y := -9.0
+	var surface_mesh := SydneyMesh.tunnel_road_surface_mesh(roads, TUNNEL_Y, Color("2a2e33"))
+	_add_mesh("RoadTunnels", surface_mesh)
+	var shell_mesh := SydneyMesh.tunnel_road_shell_mesh(roads, TUNNEL_Y, Color("4a4d52"))
+	_add_mesh("RoadTunnelShells", shell_mesh)
+
+	# Simple portal frames at true tunnel mouths (endpoints that are not shared
+	# with another tunnel segment) for visible transitions.
+	var tunnel_roads: Array = []
+	for road in roads:
+		if bool(road.get("tunnel", false)):
+			tunnel_roads.append(road)
+	if tunnel_roads.is_empty():
+		return
+
+	var endpoint_counts: Dictionary = {}
+	for road in tunnel_roads:
+		var points: Array = road.get("points", [])
+		if points.size() < 2:
+			continue
+		for endpoint_index in [0, points.size() - 1]:
+			var p: Array = points[endpoint_index]
+			var key := "%d,%d" % [int(round(float(p[0]))), int(round(float(p[1])))]
+			endpoint_counts[key] = int(endpoint_counts.get(key, 0)) + 1
+
+	var portals := Node3D.new()
+	portals.name = "RoadTunnelPortals"
+	add_child(portals)
+	var built := 0
+	var seen: Dictionary = {}
+	for road in tunnel_roads:
+		var points: Array = road.get("points", [])
+		if points.size() < 2:
+			continue
+		var width: float = maxf(float(road.get("widthM", 8.0)), 4.0)
+		for endpoint_index in [0, points.size() - 1]:
+			var p: Array = points[endpoint_index]
+			var key := "%d,%d" % [int(round(float(p[0]))), int(round(float(p[1])))]
+			if int(endpoint_counts.get(key, 0)) != 1:
+				continue
+			if seen.has(key):
+				continue
+			seen[key] = true
+			var other_index := 1 if endpoint_index == 0 else points.size() - 2
+			var a: Array = points[endpoint_index]
+			var b: Array = points[other_index]
+			var dir := Vector2(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
+			if dir.length() < 0.01:
+				continue
+			dir = dir.normalized()
+			var yaw := atan2(-dir.x, -dir.y)
+			var portal := Node3D.new()
+			portal.position = Vector3(float(a[0]), TUNNEL_Y, float(a[1]))
+			portal.rotation.y = yaw
+			portals.add_child(portal)
+			var opening_w: float = width + 2.2
+			var opening_h: float = 5.6
+			# Frame around tunnel mouth.
+			_add_portal_box(portal, Vector3(-(opening_w * 0.5 + 0.5), opening_h * 0.5, 0.0), Vector3(1.0, opening_h + 1.0, 1.2), Color("6b6962"))
+			_add_portal_box(portal, Vector3(opening_w * 0.5 + 0.5, opening_h * 0.5, 0.0), Vector3(1.0, opening_h + 1.0, 1.2), Color("6b6962"))
+			_add_portal_box(portal, Vector3(0.0, opening_h + 0.5, 0.0), Vector3(opening_w + 2.0, 1.0, 1.2), Color("747168"))
+			_add_portal_box(portal, Vector3(0.0, -0.2, 0.0), Vector3(opening_w + 1.4, 0.4, 1.4), Color("3a3d42"))
+			built += 1
+
+	var tunnel_counts: Dictionary = geometry_counts.get("RoadTunnels", {})
+	geometry_counts["RoadTunnels"] = {
+		"roads": tunnel_roads.size(),
+		"vertices": int(tunnel_counts.get("vertices", 0)),
+		"triangles": int(tunnel_counts.get("triangles", 0)),
+		"portals": built,
+		"depthY": TUNNEL_Y,
+	}
+	var shell_counts: Dictionary = geometry_counts.get("RoadTunnelShells", {})
+	geometry_counts["RoadTunnelShells"] = {
+		"vertices": int(shell_counts.get("vertices", 0)),
+		"triangles": int(shell_counts.get("triangles", 0)),
+		"depthY": TUNNEL_Y,
+	}
+
+
+func _add_portal_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
+	var mesh_instance := MeshInstance3D.new()
+	var key := "box:%s:%s:%s" % [size.x, size.y, size.z]
+	var box: BoxMesh = _portal_meshes.get(key)
+	if box == null:
+		box = BoxMesh.new()
+		box.size = size
+		_portal_meshes[key] = box
+	mesh_instance.mesh = box
+	mesh_instance.material_override = SydneyMesh.mat(color)
+	mesh_instance.position = pos
+	parent.add_child(mesh_instance)
 
 
 func _build_footpaths() -> void:

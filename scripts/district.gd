@@ -106,6 +106,7 @@ var hit_time: float = 0.0
 var reload_bar: ProgressBar
 var health_bar: ProgressBar
 var minimap: MiniMap
+var wanted_label: Label
 var sydney_world: SydneyWorld
 var using_sydney: bool = false
 
@@ -143,7 +144,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -194,12 +195,33 @@ func _unhandled_input(event: InputEvent) -> void:
 		player.respawn()
 
 func interact() -> void:
+	if player.in_supermarket != null:
+		player.in_supermarket.call("interact", player)
+		return
+	var market := _nearest_supermarket()
+	if market != null:
+		market.call("interact", player)
+		return
 	if player.vehicle != null:
 		player.vehicle.call("exit_vehicle")
 	else:
 		find_nearest_vehicle()
 		if nearest != null:
+			var wanted := get_node_or_null("WantedSystem")
+			if nearest.is_in_group("traffic_vehicles") and wanted != null:
+				wanted.add_crime(8.0, "GRAND THEFT AUTO · police alerted")
 			nearest.call("enter", player)
+
+
+func _nearest_supermarket() -> Node3D:
+	var closest: Node3D = null
+	var closest_distance := 8.0
+	for market: Node3D in get_tree().get_nodes_in_group("supermarket"):
+		var distance := player.global_position.distance_to(market.global_position)
+		if distance < closest_distance:
+			closest = market
+			closest_distance = distance
+	return closest
 
 func find_nearest_vehicle() -> void:
 	nearest = null
@@ -253,14 +275,18 @@ func _process(dt: float) -> void:
 		hint_text = "W S accelerate/reverse · A D steer · SPACE brake · SHIFT NOS boost · E exit"
 	else:
 		_set_label_text(status, message)
-		if nearest != null:
+		if player.in_supermarket != null:
+			hint_text = "E near shelf: SHOPLIFT · E at the marked door: LEAVE · G near a pump: HUFF PETROL"
+		elif nearest != null:
 			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") else "DRIVE"
 			hint_text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
 		else:
-			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload"
+			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload · G sniff petrol"
 	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 		hint_text = "MOUSE RELEASED · Click to resume     F5  respawn"
 	_set_label_text(hint, hint_text)
+	var wanted := get_node_or_null("WantedSystem")
+	_set_label_text(wanted_label, wanted.stars_text() if wanted != null else "")
 
 func build_hud() -> void:
 	var layer := CanvasLayer.new()
@@ -358,6 +384,16 @@ func build_hud() -> void:
 		minimap.offset_bottom = -22
 		minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(minimap)
+	wanted_label = Label.new()
+	wanted_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	wanted_label.offset_left = -330
+	wanted_label.offset_right = -340
+	wanted_label.offset_top = 96
+	wanted_label.offset_bottom = 128
+	wanted_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	wanted_label.add_theme_font_size_override("font_size", 18)
+	wanted_label.add_theme_color_override("font_color", Color("ff5a4d"))
+	root.add_child(wanted_label)
 	cross = Label.new()
 	cross.text = "+"
 	cross.add_theme_font_size_override("font_size",24)

@@ -25,6 +25,8 @@ const TrafficManagerScript := preload("res://sydney/ecosystem/traffic_manager.gd
 const PedestrianManagerScript := preload("res://sydney/ecosystem/pedestrian_manager.gd")
 const WildlifeManagerScript := preload("res://sydney/ecosystem/wildlife_manager.gd")
 const HarbourBoatsScript := preload("res://sydney/harbour/harbour_boats.gd")
+const TrainManagerScript := preload("res://sydney/railway/train_manager.gd")
+const WantedSystemScript := preload("res://scripts/wanted_system.gd")
 
 const BRIDGE_OPERA_XZ := Vector2(658.72, -1763.81)
 
@@ -201,3 +203,16 @@ func _initialize_living_ecosystem() -> void:
 	boats.name = "HarbourBoats"
 	add_child(boats)
 	boats.setup(player)
+
+	# 7. K Set trains on the Milsons Point–Redfern rail corridor
+	var trains := TrainManagerScript.new()
+	trains.name = "TrainManager"
+	add_child(trains)
+	trains.setup(cbd_world.get_node_or_null("SydneyRailNetwork"), player)
+
+	# 8. Wanted level and police pursuit
+	var wanted := WantedSystemScript.new()
+	wanted.name = "WantedSystem"
+	wanted.add_to_group("wanted_system")
+	add_child(wanted)
+	wanted.setup(player)

@@ -281,6 +281,127 @@ static func road_mesh(roads: Array, junctions: Array, y: float, color: Color) ->
 	return mesh
 
 
+static func tunnel_road_surface_mesh(roads: Array, y: float, color: Color) -> ArrayMesh:
+	## Renders tunnel-tagged roads as drivable/visible ribbons at tunnel depth.
+	## This is authored 3D presentation for data that was previously retained but
+	## not drawn (to avoid placing motorway ribbons through surface buildings).
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for road in roads:
+		if not bool(road.get("tunnel", false)):
+			continue
+		var path: Array = []
+		for point in road.get("points", []):
+			path.append(Vector2(float(point[0]), float(point[1])))
+		if path.size() < 2:
+			continue
+		_add_path(surface, path, float(road.get("widthM", 8.0)), y)
+	var mesh := surface.commit()
+	if mesh != null and mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, mat(color))
+	return mesh
+
+
+static func tunnel_road_shell_mesh(roads: Array, road_y: float, color: Color) -> ArrayMesh:
+	## Simple enclosed tunnel shell (walls + ceiling) for tunnel-tagged roads.
+	## Dimensions are authored presentation; road data has no surveyed bore profile.
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for road in roads:
+		if not bool(road.get("tunnel", false)):
+			continue
+		var path: Array = []
+		for point in road.get("points", []):
+			path.append(Vector2(float(point[0]), float(point[1])))
+		if path.size() < 2:
+			continue
+		_add_tunnel_shell(surface, path, float(road.get("widthM", 8.0)), road_y)
+	var mesh := surface.commit()
+	if mesh != null and mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, mat(color))
+	return mesh
+
+
+static func _add_tunnel_shell(surface: SurfaceTool, path: Array, road_width: float, road_y: float) -> void:
+	var points := _clean_path_points(path)
+	if points.size() < 2:
+		return
+	var half_road := maxf(road_width, 3.0) * 0.5
+	var wall_inset := 0.8
+	var half_inner := half_road + wall_inset
+	var wall_height := 5.4
+	var ceiling_y := road_y + wall_height
+	var wall_thickness := 0.45
+	for i in range(points.size() - 1):
+		var a: Vector2 = points[i]
+		var b: Vector2 = points[i + 1]
+		var seg := b - a
+		if seg.length() < 0.05:
+			continue
+		var dir := seg.normalized()
+		var n := _perp(dir)
+		# Left and right wall volumes (simple vertical quads/boxes as triangles).
+		_add_wall_segment(surface, a, b, n, half_inner, wall_thickness, road_y, ceiling_y, 1.0)
+		_add_wall_segment(surface, a, b, n, half_inner, wall_thickness, road_y, ceiling_y, -1.0)
+		# Ceiling slab spanning between inner wall faces.
+		var l0 := Vector3(a.x + n.x * half_inner, ceiling_y, a.y + n.y * half_inner)
+		var r0 := Vector3(a.x - n.x * half_inner, ceiling_y, a.y - n.y * half_inner)
+		var r1 := Vector3(b.x - n.x * half_inner, ceiling_y, b.y - n.y * half_inner)
+		var l1 := Vector3(b.x + n.x * half_inner, ceiling_y, b.y + n.y * half_inner)
+		_add_quad(surface, l0, r0, r1, l1, Vector3.DOWN, Color.WHITE)
+		_add_quad(surface, l0, l1, r1, r0, Vector3.UP, Color.WHITE)
+
+
+static func _add_wall_segment(
+	surface: SurfaceTool,
+	a: Vector2,
+	b: Vector2,
+	normal: Vector2,
+	half_inner: float,
+	thickness: float,
+	y0: float,
+	y1: float,
+	side_sign: float
+) -> void:
+	# side_sign = +1 for left wall (along +normal), -1 for right wall.
+	var inner_off := normal * (half_inner * side_sign)
+	var outer_off := normal * ((half_inner + thickness) * side_sign)
+	var a_in := Vector3(a.x + inner_off.x, 0.0, a.y + inner_off.y)
+	var b_in := Vector3(b.x + inner_off.x, 0.0, b.y + inner_off.y)
+	var a_out := Vector3(a.x + outer_off.x, 0.0, a.y + outer_off.y)
+	var b_out := Vector3(b.x + outer_off.x, 0.0, b.y + outer_off.y)
+	var inward := Vector3(-normal.x * side_sign, 0.0, -normal.y * side_sign)
+	var outward := -inward
+	# Inner face (facing roadway).
+	_add_quad(surface,
+		Vector3(a_in.x, y0, a_in.z), Vector3(b_in.x, y0, b_in.z),
+		Vector3(b_in.x, y1, b_in.z), Vector3(a_in.x, y1, a_in.z),
+		inward, Color.WHITE)
+	# Outer face.
+	_add_quad(surface,
+		Vector3(a_out.x, y0, a_out.z), Vector3(a_out.x, y1, a_out.z),
+		Vector3(b_out.x, y1, b_out.z), Vector3(b_out.x, y0, b_out.z),
+		outward, Color.WHITE)
+	# Top cap.
+	_add_quad(surface,
+		Vector3(a_in.x, y1, a_in.z), Vector3(b_in.x, y1, b_in.z),
+		Vector3(b_out.x, y1, b_out.z), Vector3(a_out.x, y1, a_out.z),
+		Vector3.UP, Color.WHITE)
+
+
+static func _add_quad(
+	surface: SurfaceTool,
+	p0: Vector3,
+	p1: Vector3,
+	p2: Vector3,
+	p3: Vector3,
+	normal: Vector3,
+	color: Color
+) -> void:
+	_add_triangle(surface, p0, p1, p2, normal, color)
+	_add_triangle(surface, p0, p2, p3, normal, color)
+
+
 static func _add_junction(surface: SurfaceTool, junction: Dictionary, by_id: Dictionary, y: float) -> void:
 	var center := Vector2(float(junction.get("x", 0.0)), float(junction.get("z", 0.0)))
 	var corners := PackedVector2Array()

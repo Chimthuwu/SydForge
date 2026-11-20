@@ -14,6 +14,8 @@ extends "res://scripts/district.gd"
 ##      Circular Quay; scripts/sydney_opera_district.gd overrides them for the
 ##      Opera House forecourt.
 ##   3. A two-second hold on the opening heading (see INTRO_HOLD).
+##   4. A richer Sydney-specific environment (atmosphere, fog, sun/shadow tuning)
+##      layered on top of the shared District Zero defaults.
 
 ## Opera House podium centroid in the world projection (Bennelong Point).
 const OPERA_HOUSE_XZ := Vector2(658.72, -1763.81)
@@ -38,6 +40,51 @@ var _intro := 0.0
 
 func _sydney_requested() -> bool:
 	return true
+
+
+## Sydney-specific presentation: clearer daylight, softer ambient fill, longer
+## shadows and light distance haze for depth. This only affects this playtest
+## entry point (and subclasses that call super); the canonical CBD scene keeps
+## its own environment setup in its modified district script.
+func build_environment() -> void:
+	super()
+	for node in find_children("*", "WorldEnvironment", true, false):
+		var world_env := node as WorldEnvironment
+		if world_env == null or world_env.environment == null:
+			continue
+		var env := world_env.environment
+		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		env.tonemap_exposure = 1.02
+		env.tonemap_white = 1.08
+		env.ambient_light_energy = 0.5
+		env.ambient_light_color = Color("d7e6f2")
+		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
+			var sky_mat := env.sky.sky_material as ProceduralSkyMaterial
+			sky_mat.sky_top_color = Color("4ea8d8")
+			sky_mat.sky_horizon_color = Color("cfe9e2")
+			sky_mat.ground_horizon_color = Color("d7e0d2")
+			sky_mat.sun_angle_max = 0.8
+			sky_mat.sun_curve = 0.12
+		env.fog_enabled = true
+		env.fog_light_color = Color("8ea0aa")
+		env.fog_light_energy = 0.75
+		env.fog_density = 0.0009
+		env.fog_aerial_perspective = 0.3
+		env.fog_sky_affect = 0.12
+		env.glow_enabled = true
+		env.glow_intensity = 0.35
+		env.glow_strength = 0.9
+		env.glow_bloom = 0.04
+		env.ssao_enabled = false
+		env.ssr_enabled = false
+	for node in find_children("*", "DirectionalLight3D", true, false):
+		var sun := node as DirectionalLight3D
+		sun.light_energy = 1.05
+		sun.light_color = Color("ffe8be")
+		sun.shadow_enabled = true
+		sun.directional_shadow_max_distance = 260.0
+		sun.shadow_bias = 0.03
+		break
 
 
 ## Where this entry point starts the player.

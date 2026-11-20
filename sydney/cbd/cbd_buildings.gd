@@ -40,6 +40,18 @@ const WINDOW_EMISSION_COLORS := [
 	Color("8ac9ff"),
 ]
 const WINDOW_EMISSION_LEVELS := [3.2, 2.4, 2.0]
+## Alpha carries the facade family into facade.gdshader. Glass stays below
+## 0.35; the remaining bands select brick, stone, render or concrete detail.
+const FACADE_FAMILY_ALPHA := {
+	"glass-tower": 0.2,
+	"brick-commercial": 0.45,
+	"warehouse": 0.5,
+	"stone-commercial": 0.65,
+	"sandstone": 0.75,
+	"terrace": 0.85,
+	"retail": 0.9,
+	"apartment": 0.95,
+}
 
 # Authored facade families. `wall` is the spandrel/pier colour, `glass` the
 # window band, `podium` the ground floor, `trim` the parapet, `roof` the top.
@@ -50,8 +62,8 @@ const FAMILIES := {
 		"cornice": false, "piers": true, "plant": true,
 	},
 	"stone-commercial": {
-		"wall": Color("b6aa93"), "glass": Color("33434a"), "podium": Color("948873"),
-		"trim": Color("cfc4ac"), "roof": Color("777264"), "podium_height": 9.0,
+		"wall": Color("a69276"), "glass": Color("33434a"), "podium": Color("887a65"),
+		"trim": Color("c2b193"), "roof": Color("6c675b"), "podium_height": 9.0,
 		"cornice": true, "piers": true, "plant": false,
 	},
 	"brick-commercial": {
@@ -391,8 +403,8 @@ func _emit_mass(
 				# Masonry stays masonry. The old full-glass bands printed stripes
 				# across every facade; window detail now comes from the shader.
 				color = wall.darkened(0.055) if band % 2 == 1 else wall
-			# Alpha tags the facade family for the shader (0.2 = curtain wall).
-			color.a = 0.2 if style == "glass-tower" else 1.0
+			# Alpha tags the facade family for the shader.
+			color.a = float(FACADE_FAMILY_ALPHA.get(style, 1.0))
 			var p0 := Vector3(a.x, low, a.y)
 			var p1 := Vector3(b.x, low, b.y)
 			var p2 := Vector3(b.x, high, b.y)

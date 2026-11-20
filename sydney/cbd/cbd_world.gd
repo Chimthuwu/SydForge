@@ -45,11 +45,48 @@ const AUTHORED_LANDMARK_BUILDINGS := [
 	"way/104948253", # Sydney Town Hall
 	"way/16749128", # St Mary's Cathedral
 ]
+## Generated infill on top of the Town Hall forecourt hid the authored east
+## elevation and clock tower from George Street. The OSM Town Hall footprint is
+## kept; only the generated blocks inside this protected frontage are removed.
+const TOWN_HALL_FORECOURT := Rect2(-127.0, -8.0, 60.0, 45.0)
+## Keep the Milsons Point-Wynyard rail corridor clear of generated/baked
+## building footprints so the bridge descent and underground approach are not
+## obstructed by buildings intersecting the trainline/tunnel envelope.
+const RAIL_CORRIDOR_CLEARANCE_M := 18.0
+const RAIL_CORRIDOR_POLYLINE: Array[Vector2] = [
+	Vector2(322.66, -3097.79),
+	Vector2(329.81, -3064.81),
+	Vector2(351.76, -2994.86),
+	Vector2(372.10, -2939.47),
+	Vector2(-152.24, -1562.58),
+	Vector2(-162.43, -1541.83),
+	Vector2(-177.50, -1505.41),
+	Vector2(-192.31, -1457.24),
+	Vector2(-208.32, -1397.30),
+	Vector2(-234.92, -1325.05),
+	Vector2(-247.37, -1281.14),
+	Vector2(-255.78, -1231.93),
+	Vector2(-257.89, -1198.81),
+	Vector2(-256.86, -1152.05),
+	Vector2(-249.72, -1102.05),
+	Vector2(-237.87, -1009.72),
+	Vector2(-230.58, -941.60),
+	Vector2(-227.29, -868.50),
+	Vector2(-221.30, -809.17),
+	Vector2(-199.88, -595.03),
+	Vector2(-197.62, -576.70),
+]
 const CbdLandmarks := preload("res://sydney/cbd/cbd_landmarks.gd")
 const CbdRetail := preload("res://sydney/cbd/cbd_retail.gd")
+const CbdPetrol := preload("res://sydney/cbd/cbd_petrol.gd")
+const CbdSupermarkets := preload("res://sydney/cbd/cbd_supermarkets.gd")
+const CbdStreetSigns := preload("res://sydney/cbd/cbd_street_signs.gd")
 const FACADE_SHADER := preload("res://shaders/facade.gdshader")
 const ASPHALT_SHADER := preload("res://shaders/asphalt.gdshader")
+const GRASS_SHADER := preload("res://shaders/grass.gdshader")
+const BRICK_TEXTURE := preload("res://sydney/architecture/megakit/T_RedBrick_BaseColor.png")
 const CbdRailNetwork := preload("res://sydney/cbd/cbd_rail_network.gd")
+const StationInteriorsScript := preload("res://sydney/railway/station_interiors.gd")
 
 var district_centres: Dictionary = {}
 var viewpoints: Dictionary = {}
@@ -83,11 +120,31 @@ func _build() -> void:
 	build_times_ms["RetailChains"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 	start = Time.get_ticks_usec()
+	var petrol := CbdPetrol.new()
+	petrol.build()
+	add_child(petrol)
+	geometry_counts["PetrolStations"] = petrol.stats
+	var supermarkets := CbdSupermarkets.new()
+	supermarkets.build(data)
+	add_child(supermarkets)
+	geometry_counts["Supermarkets"] = supermarkets.stats
+	var street_signs := CbdStreetSigns.new()
+	street_signs.build(data)
+	add_child(street_signs)
+	geometry_counts["StreetSignage"] = street_signs.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["CivicServices"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+	start = Time.get_ticks_usec()
 	var railway: Node3D = CbdRailNetwork.new()
 	railway.name = "SydneyRailNetwork"
 	if railway.build(data, get_node_or_null("HarbourBridge")):
 		add_child(railway)
 		geometry_counts["SydneyRailNetwork"] = railway.stats
+		var interiors = StationInteriorsScript.new()
+		interiors.build(railway, data)
+		add_child(interiors)
+		geometry_counts["StationInteriors"] = interiors.stats
 	else:
 		railway.free()
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -132,6 +189,8 @@ func _build_buildings() -> void:
 	var rows: Array = []
 	var removed_site_overlaps := 0
 	var authored_landmark_masses := 0
+	var removed_town_hall_infill := 0
+	var removed_rail_corridor := 0
 	for row in source_rows:
 		if String(row.get("id", "")) in AUTHORED_LANDMARK_BUILDINGS:
 			authored_landmark_masses += 1
@@ -139,12 +198,20 @@ func _build_buildings() -> void:
 		if String(row.get("id", "")) in OPERA_HOUSE_SITE_OVERLAPS:
 			removed_site_overlaps += 1
 			continue
+		if _clears_town_hall_forecourt(row):
+			removed_town_hall_infill += 1
+			continue
+		if _intersects_rail_corridor(row):
+			removed_rail_corridor += 1
+			continue
 		rows.append(row)
 	var builder = CbdBuildings.new()
 	var result: Dictionary = builder.build(rows, player_spawn)
 	building_stats = result.get("stats", {})
 	building_stats["operaHouseSiteOverlapsRemoved"] = removed_site_overlaps
 	building_stats["authoredLandmarkMasses"] = authored_landmark_masses
+	building_stats["townHallForecourtInfillRemoved"] = removed_town_hall_infill
+	building_stats["railCorridorBuildingsRemoved"] = removed_rail_corridor
 	var mesh = result.get("mesh")
 	if mesh != null:
 		_add_mesh("Buildings", SydneyMesh.engine_building_mesh(mesh))
@@ -198,7 +265,8 @@ func _build_buildings() -> void:
 ## the collision. Stage B is five kilometres across, so the inherited 300 m
 ## margin left the map edge visible as a dark band on the horizon; the visual
 ## ground is extended well past the playable bounds while the collision box keeps
-## its documented size.
+## its documented size. Underground station interiors require rectangular
+## openings cut through both the visual ground and its collision.
 func _build_ground() -> void:
 	var min_x := float(bounds["minX"])
 	var max_x := float(bounds["maxX"])
@@ -206,23 +274,83 @@ func _build_ground() -> void:
 	var max_z := float(bounds["maxZ"])
 	var size := Vector3(max_x - min_x + 300.0, 1.0, max_z - min_z + 300.0)
 	var center := Vector3((min_x + max_x) * 0.5, -0.5, (min_z + max_z) * 0.5)
-	var instance := MeshInstance3D.new()
-	instance.name = "Ground"
-	var box := BoxMesh.new()
-	box.size = Vector3(size.x + 6000.0, 0.4, size.z + 6000.0)
-	instance.mesh = box
-	instance.material_override = SydneyMesh.mat(Color("6c7060"))
-	instance.position = Vector3(center.x, -0.22, center.z)
-	add_child(instance)
+	var base_rect := Rect2(center.x - size.x * 0.5, center.z - size.z * 0.5, size.x, size.z)
+	var hole_rects: Array[Rect2] = []
+	for opening in StationInteriorsScript.openings():
+		var ow := float(opening.get("w", 0.0))
+		var oh := float(opening.get("h", 0.0))
+		if ow <= 0.0 or oh <= 0.0:
+			continue
+		hole_rects.append(Rect2(float(opening["x"]) - ow * 0.5, float(opening["z"]) - oh * 0.5, ow, oh))
+	var cells := _subtract_ground_rects(base_rect, hole_rects)
+
 	var body := StaticBody3D.new()
 	body.name = "GroundCollision"
 	add_child(body)
-	var collider := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = size
-	collider.shape = shape
-	collider.position = center
-	body.add_child(collider)
+	for i in cells.size():
+		var rect: Rect2 = cells[i]
+		var collider := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(rect.size.x, 1.0, rect.size.y)
+		collider.shape = shape
+		collider.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.5, rect.position.y + rect.size.y * 0.5)
+		body.add_child(collider)
+
+	var mat := SydneyMesh.mat(Color("6c7060"))
+	for i in cells.size():
+		var rect: Rect2 = cells[i]
+		var instance := MeshInstance3D.new()
+		instance.name = "Ground_%d" % i
+		var box := BoxMesh.new()
+		box.size = Vector3(rect.size.x, 0.4, rect.size.y)
+		instance.mesh = box
+		instance.material_override = mat
+		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.22, rect.position.y + rect.size.y * 0.5)
+		add_child(instance)
+
+	# Extended visual ground beyond the playable/collision bounds, split so it
+	# does not cover station openings inside the base rect.
+	var outer := Rect2(center.x - (size.x + 6000.0) * 0.5, center.z - (size.z + 6000.0) * 0.5, size.x + 6000.0, size.z + 6000.0)
+	var outer_cells: Array[Rect2] = _subtract_ground_rects(outer, [base_rect])
+	for i in outer_cells.size():
+		var rect: Rect2 = outer_cells[i]
+		var instance := MeshInstance3D.new()
+		instance.name = "GroundOuter_%d" % i
+		var box := BoxMesh.new()
+		box.size = Vector3(rect.size.x, 0.4, rect.size.y)
+		instance.mesh = box
+		instance.material_override = mat
+		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.22, rect.position.y + rect.size.y * 0.5)
+		add_child(instance)
+
+
+func _subtract_ground_rects(base: Rect2, holes: Array[Rect2]) -> Array[Rect2]:
+	var rects: Array[Rect2] = [base]
+	for hole in holes:
+		var next: Array[Rect2] = []
+		for rect in rects:
+			var inter := rect.intersection(hole)
+			if inter.size.x <= 0.01 or inter.size.y <= 0.01:
+				next.append(rect)
+				continue
+			# Left strip
+			if inter.position.x > rect.position.x + 0.01:
+				next.append(Rect2(rect.position.x, rect.position.y, inter.position.x - rect.position.x, rect.size.y))
+			# Right strip
+			var right_x := inter.position.x + inter.size.x
+			var rect_right := rect.position.x + rect.size.x
+			if right_x < rect_right - 0.01:
+				next.append(Rect2(right_x, rect.position.y, rect_right - right_x, rect.size.y))
+			# Top strip (above hole in -Z? Rect2 y is min_z here)
+			if inter.position.y > rect.position.y + 0.01:
+				next.append(Rect2(inter.position.x, rect.position.y, inter.size.x, inter.position.y - rect.position.y))
+			# Bottom strip
+			var bottom_y := inter.position.y + inter.size.y
+			var rect_bottom := rect.position.y + rect.size.y
+			if bottom_y < rect_bottom - 0.01:
+				next.append(Rect2(inter.position.x, bottom_y, inter.size.x, rect_bottom - bottom_y))
+		rects = next
+	return rects
 
 
 ## The inherited asphalt colour is almost black at Sydney's scale and reads as a
@@ -240,10 +368,59 @@ func _build_roads() -> void:
 			surface.material_override = _asphalt_material(Color("7a786f"), 0.94)
 
 
+func _clears_town_hall_forecourt(row: Dictionary) -> bool:
+	if not str(row.get("id", "")).begins_with("gen/town-hall/"):
+		return false
+	var ring: Array = row.get("ring", [])
+	if ring.is_empty():
+		return false
+	var center := Vector2.ZERO
+	for point: Array in ring:
+		center += Vector2(float(point[0]), float(point[1]))
+	center /= float(ring.size())
+	return TOWN_HALL_FORECOURT.has_point(center)
+
+
+func _intersects_rail_corridor(row: Dictionary) -> bool:
+	var ring: Array = row.get("ring", [])
+	if ring.is_empty() or RAIL_CORRIDOR_POLYLINE.size() < 2:
+		return false
+	var center := Vector2.ZERO
+	for point: Array in ring:
+		center += Vector2(float(point[0]), float(point[1]))
+	center /= float(ring.size())
+	var radius := 0.0
+	for point: Array in ring:
+		radius = maxf(radius, center.distance_to(Vector2(float(point[0]), float(point[1]))))
+	var clearance := RAIL_CORRIDOR_CLEARANCE_M + radius
+	for i in range(RAIL_CORRIDOR_POLYLINE.size() - 1):
+		var a: Vector2 = RAIL_CORRIDOR_POLYLINE[i]
+		var b: Vector2 = RAIL_CORRIDOR_POLYLINE[i + 1]
+		if _distance_point_to_segment(center, a, b) <= clearance:
+			return true
+	return false
+
+
+func _distance_point_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var length_sq := ab.length_squared()
+	if length_sq <= 0.0001:
+		return point.distance_to(a)
+	var t := clampf((point - a).dot(ab) / length_sq, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
+
+
 func _facade_material() -> ShaderMaterial:
 	var material := ShaderMaterial.new()
 	material.shader = FACADE_SHADER
 	material.set_shader_parameter("night_factor", 0.0)
+	material.set_shader_parameter("brick_texture", BRICK_TEXTURE)
+	return material
+
+
+func _grass_material() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = GRASS_SHADER
 	return material
 
 
@@ -266,6 +443,10 @@ func _build_parks() -> void:
 	# polygon; the tint below is presentation.
 	var mesh := SydneyMesh.flat_polygons(rings, 0.04, Color("5c8f4e"))
 	_add_mesh("Parks", mesh)
+	var parks := get_node_or_null("Parks") as MeshInstance3D
+	if parks != null:
+		parks.material_override = _grass_material()
+		parks.add_to_group("grass_surfaces")
 	var greenery = CbdGreenery.new()
 	var node: Node3D = greenery.build(data.get("parks", []), data.get("roads", []))
 	add_child(node)

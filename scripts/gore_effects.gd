@@ -7,6 +7,59 @@ const FEATHER := Color("e9e6db")
 const SKIN := Color("d9a079")
 const CLOTH := Color("3d4850")
 
+static var _materials: Dictionary = {}
+static var _unit_sphere: SphereMesh
+static var _unit_cylinder: CylinderMesh
+static var _unit_box: BoxMesh
+static var _feather_box: BoxMesh
+
+
+static func _mat(color: Color, transparent: bool = false) -> StandardMaterial3D:
+	var key := "%s:%s" % [color.to_html(), str(transparent)]
+	if _materials.has(key):
+		return _materials[key]
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.9 if not transparent else 1.0
+	if transparent:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_materials[key] = material
+	return material
+
+
+static func _sphere_mesh() -> SphereMesh:
+	if _unit_sphere == null:
+		_unit_sphere = SphereMesh.new()
+		_unit_sphere.radius = 0.5
+		_unit_sphere.height = 1.0
+		_unit_sphere.radial_segments = 6
+		_unit_sphere.rings = 3
+	return _unit_sphere
+
+
+static func _cylinder_mesh() -> CylinderMesh:
+	if _unit_cylinder == null:
+		_unit_cylinder = CylinderMesh.new()
+		_unit_cylinder.top_radius = 0.86
+		_unit_cylinder.bottom_radius = 1.0
+		_unit_cylinder.height = 1.0
+		_unit_cylinder.radial_segments = 20
+	return _unit_cylinder
+
+
+static func _box_mesh() -> BoxMesh:
+	if _unit_box == null:
+		_unit_box = BoxMesh.new()
+		_unit_box.size = Vector3.ONE
+	return _unit_box
+
+
+static func _feather_mesh() -> BoxMesh:
+	if _feather_box == null:
+		_feather_box = BoxMesh.new()
+		_feather_box.size = Vector3(0.045, 0.018, 0.22)
+	return _feather_box
+
 ## High-gore, physics-driven body destruction. Bodies rupture into multiple chunks
 ## with real momentum so impacts (especially shotguns/vehicles) throw parts and
 ## leave heavy blood traces.
@@ -67,18 +120,15 @@ static func spawn_body_destruction(
 	for spec: Dictionary in parts:
 		var chunk := RigidBody3D.new()
 		chunk.name = "BodyChunk"
-		var box := BoxMesh.new()
-		box.size = spec["size"]
+		var size: Vector3 = spec["size"]
 		var mesh := MeshInstance3D.new()
-		mesh.mesh = box
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = spec["color"]
-		mat.roughness = 0.9
-		mesh.material_override = mat
+		mesh.mesh = _box_mesh()
+		mesh.scale = size
+		mesh.material_override = _mat(spec["color"])
 		chunk.add_child(mesh)
 		var shape := CollisionShape3D.new()
 		var body_shape := BoxShape3D.new()
-		body_shape.size = spec["size"]
+		body_shape.size = size
 		shape.shape = body_shape
 		chunk.add_child(shape)
 		chunk.mass = float(spec.get("mass", 1.0))
@@ -165,40 +215,24 @@ static func _spawn_burst(
 		var is_feather := feathers and index % 4 == 0
 		var fragment := MeshInstance3D.new()
 		var shape_roll := randf()
-		if is_feather:
-			var feather_mesh := BoxMesh.new()
-			feather_mesh.size = Vector3(0.045, 0.018, 0.22)
-			fragment.mesh = feather_mesh
-		elif heavy and shape_roll < 0.35:
-			var chunk_mesh := BoxMesh.new()
-			chunk_mesh.size = Vector3(
-				randf_range(0.03, 0.09),
-				randf_range(0.03, 0.09),
-				randf_range(0.04, 0.14)
-			)
-			fragment.mesh = chunk_mesh
-		else:
-			var gore_mesh := SphereMesh.new()
-			gore_mesh.radius = 0.5
-			gore_mesh.height = 1.0
-			gore_mesh.radial_segments = 6
-			gore_mesh.rings = 3
-			fragment.mesh = gore_mesh
-		var material := StandardMaterial3D.new()
-		if is_feather:
-			material.albedo_color = FEATHER
-		else:
-			material.albedo_color = [DARK_BLOOD, FRESH_BLOOD, BRIGHT_BLOOD][index % 3]
-			material.roughness = 0.95
-		fragment.material_override = material
 		var base_size := randf_range(0.05, 0.18) * clampf(intensity, 0.6, 6.0)
 		if heavy and index % 5 == 0:
 			base_size *= 1.8
 		if is_feather:
+			fragment.mesh = _feather_mesh()
+			fragment.material_override = _mat(FEATHER)
 			fragment.scale = Vector3(base_size, base_size, base_size * 2.6)
-		elif fragment.mesh is BoxMesh:
-			fragment.scale = Vector3(base_size * 1.4, base_size * 1.4, base_size * 1.4)
+		elif heavy and shape_roll < 0.35:
+			fragment.mesh = _box_mesh()
+			fragment.material_override = _mat([DARK_BLOOD, FRESH_BLOOD, BRIGHT_BLOOD][index % 3])
+			fragment.scale = Vector3(
+				base_size * 1.4 * randf_range(0.5, 1.2),
+				base_size * 1.4 * randf_range(0.5, 1.2),
+				base_size * 1.4 * randf_range(0.7, 1.8)
+			)
 		else:
+			fragment.mesh = _sphere_mesh()
+			fragment.material_override = _mat([DARK_BLOOD, FRESH_BLOOD, BRIGHT_BLOOD][index % 3])
 			fragment.scale = Vector3(base_size, base_size, base_size * randf_range(0.8, 2.0))
 		fragment.position = Vector3(randf_range(-0.08, 0.08), randf_range(0.0, 0.35), randf_range(-0.08, 0.08))
 		burst.add_child(fragment)
@@ -221,23 +255,34 @@ static func _spawn_burst(
 	cleanup.timeout.connect(burst.queue_free)
 
 
+static func _grounded_pool_position(parent: Node3D, position: Vector3) -> Vector3:
+	if not is_instance_valid(parent):
+		return position
+	var world := parent.get_world_3d()
+	if world == null:
+		return position
+	var space := world.direct_space_state
+	if space == null:
+		return position
+	var from := position + Vector3.UP * 2.0
+	var to := position + Vector3.DOWN * 8.0
+	var query := PhysicsRayQueryParameters3D.create(from, to, 1)
+	var hit := space.intersect_ray(query)
+	if hit.is_empty():
+		return position
+	return hit.position
+
+
 static func _spawn_pool(parent: Node3D, position: Vector3, radius: float) -> void:
 	var pool := MeshInstance3D.new()
 	pool.name = "BloodPool"
 	var r := clampf(radius, 0.2, 6.0)
-	var disk := CylinderMesh.new()
-	disk.top_radius = r * 0.86
-	disk.bottom_radius = r
-	disk.height = 0.03
-	disk.radial_segments = 20
-	pool.mesh = disk
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.28, 0.003, 0.014, 0.94)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.roughness = 1.0
-	pool.material_override = material
+	pool.mesh = _cylinder_mesh()
+	pool.scale = Vector3(r, 0.03, r)
+	pool.material_override = _mat(Color(0.28, 0.003, 0.014, 0.94), true)
 	parent.add_child(pool)
-	pool.global_position = position + Vector3.UP * randf_range(0.028, 0.04)
+	var ground_pos := _grounded_pool_position(parent, position)
+	pool.global_position = ground_pos + Vector3.UP * randf_range(0.028, 0.04)
 	pool.rotation.y = randf() * TAU
 	var cleanup := parent.get_tree().create_timer(28.0)
 	cleanup.timeout.connect(pool.queue_free)
@@ -251,17 +296,8 @@ static func _spawn_impact_mark(
 ) -> void:
 	var mark := MeshInstance3D.new()
 	mark.name = "BloodImpactMark"
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.5
-	mesh.height = 1.0
-	mesh.radial_segments = 10
-	mesh.rings = 5
-	mark.mesh = mesh
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(0.45, 0.006, 0.02, 0.92)
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.roughness = 1.0
-	mark.material_override = material
+	mark.mesh = _sphere_mesh()
+	mark.material_override = _mat(Color(0.45, 0.006, 0.02, 0.92), true)
 	parent.add_child(mark)
 	var normal := shot_direction.normalized()
 	if normal.length_squared() < 0.01:

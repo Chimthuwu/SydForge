@@ -230,19 +230,13 @@ func _exit_tree() -> void:
 
 ## ------------------------------------------------------------------ physics
 func _physics_process(dt: float) -> void:
-	if destroyed:
+	if destroyed and repair_time <= 0.0:
 		return
 	impact_cooldown = maxf(0,impact_cooldown-dt)
 	if repair_time > 0:
 		repair_time -= dt
 		if repair_time <= 0:
-			position = home
-			rotation = Vector3.ZERO
-			health = max_health
-			destroyed = false
-			body_art.visible = true
-			collision_layer = 1
-			collision_mask = 1
+			repair_now()
 			return
 	_input_and_boost_state(dt)
 	if driver != null and Input.is_action_just_pressed("horn") and engine_audio_system != null:
@@ -546,16 +540,34 @@ func exit_vehicle() -> bool:
 	return false
 
 
+## Weapon hits are normalised to six pistol rounds (20 HP each) so car health
+## remains a crash-durability stat. Physical crash damage uses take_damage().
+func take_weapon_damage(amount: float) -> void:
+	if destroyed or health <= 0:
+		return
+	health = maxf(0, health - 20.0)
+	if health <= 0:
+		_destroy_vehicle()
+
+
 func take_damage(amount: float) -> void:
 	if destroyed or health <= 0:
 		return
-	# Gunfire is tuned to six pistol rounds (20 HP each) independently of the
-	# exported crash health. Crash impacts arrive as larger physical values.
-	if amount <= 30.0:
-		amount = 20.0
 	health = maxf(0,health-amount)
 	if health <= 0:
 		_destroy_vehicle()
+
+
+## Repair without the explosion presentation, used by tests and respawn logic.
+func repair_now() -> void:
+	destroyed = false
+	position = home
+	rotation = Vector3.ZERO
+	health = max_health
+	body_art.visible = true
+	collision_layer = 1
+	collision_mask = 1
+	repair_time = 0.0
 
 
 func _destroy_vehicle() -> void:

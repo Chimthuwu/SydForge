@@ -16,7 +16,10 @@ enum VehicleClass {
 	TAXI,
 	BUS,
 	MOTORBIKE,
-	SCOOTER
+	SCOOTER,
+	POLICE,
+	AMBULANCE,
+	FIRE_TRUCK
 }
 
 static func get_class_specs(vclass: int) -> Dictionary:
@@ -125,6 +128,30 @@ static func get_class_specs(vclass: int) -> Dictionary:
 				"max_speed": 25.0, "accel": 15.0, "turn": 3.6, "mass": 110.0,
 				"lanes": ["all"]
 			}
+		VehicleClass.POLICE:
+			return {
+				"name": "NSW POLICE · HIGHWAY PATROL",
+				"length": 4.85, "width": 1.95, "height": 1.5,
+				"wheel_radius": 0.35, "wheel_width": 0.24,
+				"max_speed": 44.0, "accel": 26.0, "turn": 2.4, "mass": 1750.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.AMBULANCE:
+			return {
+				"name": "NSW AMBULANCE · MOBILE ICU",
+				"length": 5.8, "width": 2.15, "height": 2.5,
+				"wheel_radius": 0.38, "wheel_width": 0.24,
+				"max_speed": 34.0, "accel": 18.0, "turn": 1.9, "mass": 3200.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.FIRE_TRUCK:
+			return {
+				"name": "FIRE & RESCUE NSW · PUMPER",
+				"length": 8.8, "width": 2.55, "height": 3.4,
+				"wheel_radius": 0.52, "wheel_width": 0.32,
+				"max_speed": 26.0, "accel": 12.0, "turn": 1.3, "mass": 11000.0,
+				"lanes": ["arterial", "secondary", "primary", "trunk"]
+			}
 		_:
 			return get_class_specs(VehicleClass.SEDAN)
 
@@ -137,6 +164,8 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 	var wheels: Array[MeshInstance3D] = []
 	var headlights: Array[MeshInstance3D] = []
 	var taillights: Array[MeshInstance3D] = []
+	var emergency_lights: Array[MeshInstance3D] = []
+	var emergency_light_nodes: Array[OmniLight3D] = []
 	var light_nodes: Array[SpotLight3D] = []
 	
 	var L: float = spec["length"]
@@ -251,6 +280,58 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 			_add_standard_lights(body_art, half_w * 0.78, wr + 0.4, half_l, headlights, taillights)
 			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
 
+		VehicleClass.POLICE:
+			# NSW Police Highway Patrol Sedan
+			var base_paint := Color("f4f4f4")
+			Art.box(body_art, Vector3(0, wr + 0.35, 0), Vector3(W, 0.6, L), base_paint)
+			Art.tapered_box(body_art, Vector3(0, wr + 0.95, 0.1), Vector3(W * 0.88, 0.65, L * 0.55), Vector2(W * 0.72, L * 0.4), Color("1e293b"))
+			# Blue & white Battenburg checkers along sides
+			Art.box(body_art, Vector3(-half_w - 0.01, wr + 0.45, 0), Vector3(0.02, 0.22, L * 0.85), Color("003399"))
+			Art.box(body_art, Vector3(half_w + 0.01, wr + 0.45, 0), Vector3(0.02, 0.22, L * 0.85), Color("003399"))
+			Art.label(body_art, Vector3(-half_w - 0.03, wr + 0.45, 0), "POLICE", 10)
+			Art.label(body_art, Vector3(half_w + 0.03, wr + 0.45, 0), "POLICE", 10)
+			# Emergency Lightbar on roof
+			_build_emergency_lightbar(body_art, Vector3(0, wr + 1.35, 0.1), W * 0.75, emergency_lights, emergency_light_nodes, true)
+			_add_standard_lights(body_art, half_w * 0.78, wr + 0.4, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
+
+		VehicleClass.AMBULANCE:
+			# NSW Ambulance Van
+			var amb_paint := Color("f8f9fa")
+			Art.box(body_art, Vector3(0, wr + 0.7, 0), Vector3(W, 1.4, L), amb_paint)
+			Art.box(body_art, Vector3(0, wr + 1.3, -half_l * 0.35), Vector3(W * 0.92, 0.8, L * 0.4), Color("1e293b"))
+			# Red & white / neon checker tape
+			Art.box(body_art, Vector3(-half_w - 0.01, wr + 0.7, 0), Vector3(0.02, 0.28, L * 0.9), Color("cc1111"))
+			Art.box(body_art, Vector3(half_w + 0.01, wr + 0.7, 0), Vector3(0.02, 0.28, L * 0.9), Color("cc1111"))
+			Art.label(body_art, Vector3(-half_w - 0.03, wr + 0.7, 0), "AMBULANCE", 10)
+			Art.label(body_art, Vector3(half_w + 0.03, wr + 0.7, 0), "AMBULANCE", 10)
+			_build_emergency_lightbar(body_art, Vector3(0, wr + 2.15, -half_l * 0.35), W * 0.75, emergency_lights, emergency_light_nodes, true)
+			_add_standard_lights(body_art, half_w * 0.8, wr + 0.5, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.65, wheels)
+
+		VehicleClass.FIRE_TRUCK:
+			# Fire & Rescue NSW Pumper Truck
+			var fire_red := Color("b71c1c")
+			Art.box(body_art, Vector3(0, wr + 1.1, -half_l + 1.2), Vector3(W * 0.96, 2.0, 2.4), fire_red) # Cab
+			Art.box(body_art, Vector3(0, wr + 1.4, -half_l + 0.1), Vector3(W * 0.88, 0.9, 0.2), Color("1e293b")) # Windshield
+			# Rear body with roller equipment shutters
+			var body_len := L - 2.8
+			Art.box(body_art, Vector3(0, wr + 1.2, half_l - body_len * 0.5), Vector3(W, 2.2, body_len), fire_red)
+			Art.box(body_art, Vector3(-half_w - 0.01, wr + 1.1, half_l - body_len * 0.5), Vector3(0.02, 1.4, body_len * 0.85), Color("cfd8dc")) # Shutter
+			Art.box(body_art, Vector3(half_w + 0.01, wr + 1.1, half_l - body_len * 0.5), Vector3(0.02, 1.4, body_len * 0.85), Color("cfd8dc")) # Shutter
+			# Ladders on roof
+			Art.box(body_art, Vector3(0.5, wr + 2.4, half_l - body_len * 0.5), Vector3(0.35, 0.25, body_len * 0.9), Color("e0e0e0"))
+			Art.label(body_art, Vector3(0, wr + 1.8, half_l - body_len * 0.5), "FIRE & RESCUE NSW", 14)
+			_build_emergency_lightbar(body_art, Vector3(0, wr + 2.25, -half_l + 1.2), W * 0.8, emergency_lights, emergency_light_nodes, false) # Red/red
+			_add_standard_lights(body_art, half_w * 0.82, wr + 0.6, half_l, headlights, taillights)
+			# 6 wheels
+			wheels.append(_make_wheel(body_art, Vector3(-half_w, wr, -half_l + 1.2), wr, ww))
+			wheels.append(_make_wheel(body_art, Vector3(half_w, wr, -half_l + 1.2), wr, ww))
+			wheels.append(_make_wheel(body_art, Vector3(-half_w, wr, half_l - 2.4), wr, ww))
+			wheels.append(_make_wheel(body_art, Vector3(half_w, wr, half_l - 2.4), wr, ww))
+			wheels.append(_make_wheel(body_art, Vector3(-half_w, wr, half_l - 0.9), wr, ww))
+			wheels.append(_make_wheel(body_art, Vector3(half_w, wr, half_l - 0.9), wr, ww))
+
 		_:
 			# Standard Sedans, Hatchbacks, SUVs, Delivery Vans
 			Art.box(body_art, Vector3(0, wr + 0.35, 0), Vector3(W, 0.6, L), paint_color)
@@ -266,8 +347,43 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 		"wheels": wheels,
 		"headlights": headlights,
 		"taillights": taillights,
+		"emergency_lights": emergency_lights,
+		"emergency_light_nodes": emergency_light_nodes,
 		"specs": spec
 	}
+
+static func _build_emergency_lightbar(parent: Node3D, pos: Vector3, width: float, out_meshes: Array[MeshInstance3D], out_lights: Array[OmniLight3D], is_police_ambulance: bool) -> void:
+	# Base aerodynamic bar
+	Art.box(parent, pos, Vector3(width, 0.12, 0.28), Color("1a1a1a"))
+	# Left flasher (Blue for police/ambulance, Red for fire)
+	var left_color := Color("0044ff") if is_police_ambulance else Color("ff1111")
+	var right_color := Color("ff1111")
+	var half_w := width * 0.4
+	
+	var left_mesh := Art.box(parent, pos + Vector3(-half_w * 0.5, 0.05, 0), Vector3(half_w, 0.16, 0.24), left_color)
+	var right_mesh := Art.box(parent, pos + Vector3(half_w * 0.5, 0.05, 0), Vector3(half_w, 0.16, 0.24), right_color)
+	out_meshes.append(left_mesh)
+	out_meshes.append(right_mesh)
+
+	var left_light := OmniLight3D.new()
+	left_light.name = "EmergencyLightLeft"
+	left_light.position = pos + Vector3(-half_w * 0.5, 0.2, 0)
+	left_light.light_color = left_color
+	left_light.light_energy = 0.0
+	left_light.omni_range = 14.0
+	left_light.shadow_enabled = false
+	parent.add_child(left_light)
+	out_lights.append(left_light)
+
+	var right_light := OmniLight3D.new()
+	right_light.name = "EmergencyLightRight"
+	right_light.position = pos + Vector3(half_w * 0.5, 0.2, 0)
+	right_light.light_color = right_color
+	right_light.light_energy = 0.0
+	right_light.omni_range = 14.0
+	right_light.shadow_enabled = false
+	parent.add_child(right_light)
+	out_lights.append(right_light)
 
 static func _add_standard_lights(parent: Node3D, x: float, y: float, z: float, hl_arr: Array[MeshInstance3D], tl_arr: Array[MeshInstance3D]) -> void:
 	for side in [-1, 1]:

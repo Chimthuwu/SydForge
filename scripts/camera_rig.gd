@@ -188,24 +188,24 @@ func _build_first_person_smg() -> void:
 	smg_mount.scale = Vector3(0.80, 0.80, 0.80)
 	camera.add_child(smg_mount)
 	# Compact SMG silhouette: stamped receiver, short barrel, angled magazine,
-	# folding stock and a red-dot rail.
-	_shotgun_box(Vector3(0.28,-0.29,-0.66),Vector3(0.13,0.16,0.34),Color("2a3036"))
-	_shotgun_box(Vector3(0.28,-0.36,-0.53),Vector3(0.11,0.22,0.15),Color("1c2126"))
-	_shotgun_box(Vector3(0.28,-0.30,-0.96),Vector3(0.09,0.09,0.30),Color("1a1f24"))
-	_shotgun_cylinder(Vector3(0.28,-0.27,-1.12),0.026,0.22,Color("12171b"))
-	_shotgun_box(Vector3(0.28,-0.17,-0.72),Vector3(0.06,0.035,0.40),Color("333b41"))
-	_shotgun_box(Vector3(0.28,-0.145,-0.78),Vector3(0.055,0.05,0.07),Color("11171c"))
+	# folding stock and a red-dot rail. All parts attach to `smg_mount`.
+	_smg_box(Vector3(0.28,-0.29,-0.66),Vector3(0.13,0.16,0.34),Color("2a3036"))
+	_smg_box(Vector3(0.28,-0.36,-0.53),Vector3(0.11,0.22,0.15),Color("1c2126"))
+	_smg_box(Vector3(0.28,-0.30,-0.96),Vector3(0.09,0.09,0.30),Color("1a1f24"))
+	_smg_cylinder(Vector3(0.28,-0.27,-1.12),0.026,0.22,Color("12171b"))
+	_smg_box(Vector3(0.28,-0.17,-0.72),Vector3(0.06,0.035,0.40),Color("333b41"))
+	_smg_box(Vector3(0.28,-0.145,-0.78),Vector3(0.055,0.05,0.07),Color("11171c"))
 	# Angled magazine and grip.
-	var magazine := _shotgun_box(Vector3(0.28,-0.49,-0.62),Vector3(0.075,0.34,0.13),Color("20262b"))
+	var magazine := _smg_box(Vector3(0.28,-0.49,-0.62),Vector3(0.075,0.34,0.13),Color("20262b"))
 	magazine.rotation.x = 0.22
-	var grip := _shotgun_box(Vector3(0.28,-0.44,-0.48),Vector3(0.10,0.20,0.13),Color("20262b"))
+	var grip := _smg_box(Vector3(0.28,-0.44,-0.48),Vector3(0.10,0.20,0.13),Color("20262b"))
 	grip.rotation.x = -0.20
-	_shotgun_box(Vector3(0.38,-0.28,-0.62),Vector3(0.02,0.035,0.12),Color("7a878e"))
+	_smg_box(Vector3(0.38,-0.28,-0.62),Vector3(0.02,0.035,0.12),Color("7a878e"))
 	# Hands and sleeves.
-	_shotgun_box(Vector3(0.30,-0.43,-0.47),Vector3(0.18,0.18,0.21),Color("b98d6c"))
-	_shotgun_box(Vector3(0.31,-0.55,-0.32),Vector3(0.17,0.18,0.44),Color("26313a"))
-	_shotgun_box(Vector3(0.29,-0.35,-0.90),Vector3(0.17,0.12,0.24),Color("b98d6c"))
-	_shotgun_box(Vector3(0.17,-0.40,-0.80),Vector3(0.14,0.14,0.36),Color("2d3944"))
+	_smg_box(Vector3(0.30,-0.43,-0.47),Vector3(0.18,0.18,0.21),Color("b98d6c"))
+	_smg_box(Vector3(0.31,-0.55,-0.32),Vector3(0.17,0.18,0.44),Color("26313a"))
+	_smg_box(Vector3(0.29,-0.35,-0.90),Vector3(0.17,0.12,0.24),Color("b98d6c"))
+	_smg_box(Vector3(0.17,-0.40,-0.80),Vector3(0.14,0.14,0.36),Color("2d3944"))
 
 	smg_muzzle_flash = MeshInstance3D.new()
 	var flash_mesh := SphereMesh.new()
@@ -231,17 +231,36 @@ func _build_first_person_smg() -> void:
 	smg_mount.add_child(smg_muzzle_light)
 
 func _shotgun_box(at: Vector3, dimensions: Vector3, tint: Color) -> MeshInstance3D:
+	return _weapon_part(shotgun_mount, at, dimensions, tint, false)
+
+func _smg_box(at: Vector3, dimensions: Vector3, tint: Color) -> MeshInstance3D:
+	return _weapon_part(smg_mount, at, dimensions, tint, false)
+
+func _smg_cylinder(at: Vector3, radius: float, length: float, tint: Color) -> MeshInstance3D:
+	return _weapon_part(smg_mount, at, Vector3(radius, length, radius), tint, true)
+
+func _weapon_part(mount: Node3D, at: Vector3, dimensions: Vector3, tint: Color, cylinder: bool) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = dimensions
-	part.mesh = box
+	var shape: Mesh
+	if cylinder:
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = dimensions.x
+		cyl.bottom_radius = dimensions.x
+		cyl.height = dimensions.y
+		cyl.radial_segments = 12
+		shape = cyl
+	else:
+		var box := BoxMesh.new()
+		box.size = dimensions
+		shape = box
+	part.mesh = shape
 	part.position = at
 	var material := StandardMaterial3D.new()
 	material.albedo_color = tint
 	material.metallic = 0.42
 	material.roughness = 0.48
 	part.material_override = material
-	shotgun_mount.add_child(part)
+	mount.add_child(part)
 	return part
 
 func _shotgun_cylinder(at: Vector3, radius: float, length: float, tint: Color) -> MeshInstance3D:

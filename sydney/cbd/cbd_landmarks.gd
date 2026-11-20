@@ -9,6 +9,7 @@ extends Node3D
 
 const ArtUtil := preload("res://scripts/art.gd")
 const SydneyMeshBuilder := preload("res://sydney/sydney_mesh.gd")
+const CbdCivic := preload("res://sydney/cbd/cbd_civic.gd")
 
 const STONE := Color("cdbb9c")
 const STONE_LIGHT := Color("e0d2b7")
@@ -27,12 +28,12 @@ var stats: Dictionary = {}
 func build(world_data: Dictionary) -> void:
 	name = "SydneyCBDLandmarks"
 	_build_queen_victoria_building(world_data)
-	_build_town_hall(world_data)
 	_build_st_marys_cathedral(world_data)
-	_build_hyde_park(world_data)
 	_build_central_station(world_data)
-	_build_circular_quay(world_data)
-	_build_darling_harbour(world_data)
+	var civic := CbdCivic.new()
+	civic.name = "SydneyCivicLandmarks"
+	civic.build(world_data)
+	add_child(civic)
 	_batch_recursive(self)
 	stats = {
 		"queenVictoriaBuilding": true,
@@ -40,11 +41,12 @@ func build(world_data: Dictionary) -> void:
 		"stMarysCathedral": true,
 		"hydePark": true,
 		"centralStation": true,
-		"circularQuayWharves": 5,
-		"darlingHarbourWharves": 4,
+		"circularQuayWharves": civic.stats.get("circularQuayWharves", 0),
+		"darlingHarbourWharves": civic.stats.get("darlingHarbourWharves", 0),
 		"pyrmontBridge": true,
 		"osmBuildingMasses": 3,
 		"renderMeshNodes": _render_mesh_count(self),
+		"civicDetailMeshes": civic.stats.get("renderMeshNodes", 0),
 	}
 
 
