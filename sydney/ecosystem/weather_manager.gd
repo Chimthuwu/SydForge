@@ -107,16 +107,17 @@ func _create_rain_particles() -> void:
 	rain_material.color = Color(0.78, 0.88, 0.98, 0.42)
 	rain_particles.process_material = rain_material
 
-	# Long thin streak quad for rain droplet
-	var ribbon := RibbonTrailMesh.new()
-	ribbon.size = 0.04
-	ribbon.section_length = 0.35
+	# Camera-facing streak quad. RibbonTrailMesh is not supported by the
+	# Compatibility renderer, so rain used to silently never render there.
+	var streak := QuadMesh.new()
+	streak.size = Vector2(0.05, 0.55)
 	var drop_mat := StandardMaterial3D.new()
 	drop_mat.shading_mode = StandardMaterial3D.SHADING_MODE_UNSHADED
-	drop_mat.albedo_color = Color(0.85, 0.92, 1.0, 0.38)
+	drop_mat.albedo_color = Color(0.85, 0.92, 1.0, 0.42)
 	drop_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	drop_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	drop_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	rain_particles.draw_pass_1 = ribbon
+	rain_particles.draw_pass_1 = streak
 	rain_particles.material_override = drop_mat
 	rain_particles.emitting = false
 	add_child(rain_particles)

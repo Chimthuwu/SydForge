@@ -373,20 +373,25 @@ func _build_deck() -> void:
 	_commit(surface, "OperaDeck", _material("deck", Color("d9ceb6"), 0.92, 0.0))
 
 
-## Broad monumental steps at the southern end. Each step is a solid tier, so the
-## silhouette reads as the real stepped base and the tiers collide as solid rock.
+## Broad monumental steps at the southern end. Each tread is emitted as a thin
+## slab rather than a full-height solid prism. The old prisms nested inside one
+## another, leaving buried top faces and coplanar side walls at the podium clip
+## plane; a vehicle box pressed against them was depenetrated upward a fraction
+## each tick. Thin slabs keep every walkable tread at exactly the same height,
+## keep the stepped silhouette, and remove those redundant internal faces.
 func _build_steps() -> void:
 	var surface := _surface()
 	var limit := STEP_LOCAL_LIMIT + origin_xz.dot(axis_xz)
+	var rise := PODIUM_TOP / float(STEP_COUNT)
 	for index in STEP_COUNT:
 		var expanded := _buffer_ring(podium_ring, float(index + 1) * STEP_RUN)
 		var clipped := _clip_halfplane(expanded, axis_xz, limit)
 		if clipped.size() < 3:
 			continue
-		var top := PODIUM_TOP - float(index + 1) * (PODIUM_TOP / float(STEP_COUNT))
+		var top := PODIUM_TOP - float(index + 1) * rise
 		if top < 0.05:
 			continue
-		_extrude(surface, clipped, 0.0, top)
+		_extrude(surface, clipped, maxf(0.0, top - rise), top)
 	_commit(surface, "OperaSteps", _material("stone", Color("cdbca1"), 0.95, 0.0))
 
 

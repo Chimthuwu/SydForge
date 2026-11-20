@@ -2,14 +2,14 @@
 
 _Cross-session daily report; durable design details live in project docs._
 
-- **Phase/milestone:** Canonical Sydney world with existing authored landmark and living-ecosystem passes.
-- **Last session:** Added E hijacking for AI traffic, ibis collision splats with +500 REP and no player/car damage, procedural gore, a detailed pistol/shot, and a GTA-inspired HUD/minimap. Updated the desktop play shortcut to the stable project launcher.
-- **Experience:** Godot 4.7.2 `living_sydney_ecosystem_test.gd`: 44 checks, 0 failures. `integration.gd`: 63 checks, the same 2 documented melee/reputation failures. Rendered pistol/UI and ibis-splat captures were inspected.
-- **Next up:** Stabilize the two integration failures and OS-input playtest hijacking/ibis impacts before expanding the city.
+- **Phase/milestone:** Canonical Sydney world, unified living-world simulation, and corrected vehicle airborne physics.
+- **Last session:** Fixed the "flying ambulance": AI traffic now integrates vertical velocity across frames in both autonomous and hijacked driving paths, no-route/LOD cars still fall, and `floor_snap_length` no longer glues them to a surface. Rebuilt the Opera House step collision as thin slabs to remove overlapping full-height prisms that depenetrated a box collider upward. Verified the player ArcadeCar already had correct airborne integration and left it unchanged.
+- **Experience:** A/B measurement: legacy formula left a car at y=19.51 after 180 frames from 20 m; fixed controller lands at y=0.00. New `vehicle_airborne_test.gd` 32/0 and `vehicle_stairs_airborne_test.gd` 16/0 (real Opera House geometry); opera house 57/0, Sydney physics 32/0, vehicle handling 28/0, ecosystem 51/0, living world 50/0, integration 63/0. Windowed capture showed vy=−4.25 in free fall and clean landings on lower treads. See `docs/AIRBORNE_PHYSICS_FIX.md`.
+- **Next up:** Human drive-through of a hijacked ambulance down the Opera House steps and a second listen to siren/impact audio; confirm no low-speed depenetration creep remains when idling into other dense concave collision (e.g. BuildingCollision near Circular Quay).
 - **Backlog:**
-  - Refine Town Hall/QVB/Hyde Park visuals; resolve Inner West overlap/smoke errors before adding the Anzac overpass, Luna Park, and Kings Cross nightlife. _(since 2026-11-19)_
-  - Finish non-overlapping harbour land/wharf work (Walsh Bay/Fort Denison) after resolving data scope. _(since 2026-11-19)_
-  - Audition and tune the new procedural gunshot; no human audio verification yet. _(since 2026-11-20)_
-  - Complete vehicle-overhaul capture descriptions and human drive-through notes. _(since 2026-11-19)_
+  - Improve street-level capture framing; scripted CBD viewpoints sometimes face a facade. _(since 2026-11-20)_
+  - Audit the remaining OSM `BuildingCollision`/`OperaCollision` overlaps near Circular Quay; a stationary car against them can still be pushed upward fractionally. _(since 2026-11-21)_
+  - Human audio audition of ambient beds and emergency sirens. _(since 2026-11-20)_
+  - Stale `main_game_test.gd` (39/17) and `wanted_system_test.gd` (6/3) baselines fail identically on clean HEAD. _(since 2026-11-20)_
 
-_Updated: 2026-11-20_
+_Updated: 2026-11-21_

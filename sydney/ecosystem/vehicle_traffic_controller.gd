@@ -1,6 +1,13 @@
 class_name VehicleTrafficController
 extends CharacterBody3D
 
+## Gravity for AI traffic. Vertical velocity is integrated across frames; the
+## old code overwrote velocity.y every physics step, so a car leaving a ledge
+## fell at roughly one frame's worth of gravity per second and appeared to fly.
+const AIR_GRAVITY := 9.8
+const MAX_FALL_SPEED := 45.0
+const MAX_LAUNCH_SPEED := 8.0
+
 ## Individual autonomous vehicle controller following road network splines/waypoints.
 ## Complies with Australian left-hand traffic, maintains adaptive following distances,
 ## respects red signals and pedestrian crossings, yields to emergency sirens,
@@ -167,7 +174,12 @@ func _setup_vehicle() -> void:
 	collision_shape.shape = box
 	collision_shape.position.y = specs["height"] * 0.5
 	add_child(collision_shape)
-	
+	# A vehicle must be able to leave a kerb or the Opera House podium without
+	# the CharacterBody3D snapping down onto the next surface. Driving/steering
+	# is still handled by the route follower; only contact queries decide when
+	# the car is grounded.
+	floor_snap_length = 0.0
+
 	# Forward clearance raycasts (center, left shoulder, right shoulder)
 	clearance_ray = RayCast3D.new()
 	clearance_ray.position = Vector3(0, 0.6, -specs["length"] * 0.5)
@@ -397,6 +409,20 @@ func _update_engine_audio(delta: float) -> void:
 	engine_audio_system.update_audio(delta, current_speed, rpm, 0.0 if is_braking else 1.0, 0.0, false)
 
 
+## Single integration point for AI vehicle movement. `horizontal` is the
+## route/pedal-driven component for this step; the vertical component is kept
+## from the previous frame so gravity accumulates naturally in free fall.
+func _move_with_air_physics(horizontal: Vector3, step: float) -> void:
+	velocity.x = horizontal.x
+	velocity.z = horizontal.z
+	velocity.y = clampf(velocity.y - AIR_GRAVITY * step, -MAX_FALL_SPEED, MAX_LAUNCH_SPEED)
+	move_and_slide()
+	# Contact resolves the landing. Zero both directions of residual velocity so
+	# a stair edge cannot pump the car upward or make it bounce down the road.
+	if is_on_floor():
+		velocity.y = 0.0
+
+
 func _physics_process(delta: float) -> void:
 	_light_distance_timer += delta
 	if _light_distance_timer >= 0.5:
@@ -425,6 +451,9 @@ func _physics_process(delta: float) -> void:
 			_audio_timer = 0.0
 
 	if road_points.is_empty():
+		# Even a car with no route must obey gravity if it is airborne.
+		if not is_on_floor():
+			_move_with_air_physics(Vector3(velocity.x, 0.0, velocity.z), delta)
 		return
 
 	# Distance LOD
@@ -441,6 +470,10 @@ func _physics_process(delta: float) -> void:
 		if interval > 0.0:
 			_sim_accum += delta
 			if _sim_accum < interval:
+				# Distant cars keep their horizontal momentum and still fall
+				# correctly; only the expensive AI steering is throttled.
+				if not is_on_floor():
+					_move_with_air_physics(Vector3(velocity.x, 0.0, velocity.z), delta)
 				return
 			step = _sim_accum
 			_sim_accum = 0.0
@@ -557,12 +590,11 @@ func _physics_process(delta: float) -> void:
 
 	_update_brake_lights()
 
-	# 7. Physics movement
+	# 7. Physics movement. Horizontal route following and vertical free fall
+	# are integrated independently; velocity.y is never reset by the steering.
 	var step_scale := step / maxf(get_physics_process_delta_time(), 0.0001)
 	var fwd_dir := -global_transform.basis.z
-	velocity = fwd_dir * current_speed * step_scale
-	velocity.y -= 9.8 * step
-	move_and_slide()
+	_move_with_air_physics(fwd_dir * current_speed * step_scale, step)
 
 	# 8. Spin wheels
 	var spin := (current_speed / 0.35) * step
@@ -747,9 +779,7 @@ func _drive_player_controlled(delta: float) -> void:
 		current_speed = move_toward(current_speed, 0.0, 4.0 * delta)
 	rotation.y -= turn * turn_speed * clampf(absf(current_speed) / 8.0, 0.0, 1.0) * delta
 	_update_brake_lights()
-	velocity = -global_transform.basis.z * current_speed
-	velocity.y -= 9.8 * delta
-	move_and_slide()
+	_move_with_air_physics(-global_transform.basis.z * current_speed, delta)
 	for collision_index in get_slide_collision_count():
 		var collider := get_slide_collision(collision_index).get_collider()
 		if collider is Node and (
