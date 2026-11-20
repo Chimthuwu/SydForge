@@ -36,6 +36,8 @@ var foot_patrol_officers: Array[Node3D] = []
 
 var _timer: float = 15.0 # Initial incident delay
 var _foot_patrol_timer: float = 0.0
+var _patrol_intensity: float = 0.0
+var _world_sim: Node = null
 
 
 func _ready() -> void:
@@ -45,7 +47,33 @@ func _ready() -> void:
 func setup(world: SydneyWorld, player: Node3D) -> void:
 	sydney_world = world
 	player_ref = player
+	var sims := get_tree().get_nodes_in_group("world_simulation")
+	_world_sim = sims[0] if not sims.is_empty() else null
 	_spawn_police_foot_patrols()
+
+
+## Requested by WorldSimulationDirector for gunfire, crimes and disturbances.
+## A real AI police car is dispatched through TrafficManager; it joins the
+## existing traffic simulation instead of being teleported to the scene.
+func request_police_response(position: Vector3, severity: float = 1.0) -> void:
+	var traffic_mgrs := get_tree().get_nodes_in_group("traffic_managers")
+	if not traffic_mgrs.is_empty() and traffic_mgrs[0].has_method("request_emergency_response"):
+		traffic_mgrs[0].call("request_emergency_response", position, "police")
+	_spawn_foot_officers_near(position, 1 if severity < 1.5 else 2)
+
+
+func set_patrol_intensity(value: float) -> void:
+	_patrol_intensity = clampf(value, 0.0, 1.0)
+
+
+func _spawn_foot_officers_near(position: Vector3, count: int) -> void:
+	for i in count:
+		var cop := Art.person(self, Color("152238"))
+		cop.name = "RespondingOfficer"
+		cop.position = position + Vector3(1.8 + i * 0.8, 0.2, -1.4 - i * 0.5)
+		cop.add_to_group("police_foot_patrol")
+		Art.box(cop, Vector3(0, 1.68, 0), Vector3(0.28, 0.12, 0.28), Color("101820"))
+		foot_patrol_officers.append(cop)
 
 
 func _process(delta: float) -> void:
@@ -142,8 +170,23 @@ func _create_incident(type: int, pos: Vector3, road_info: Dictionary) -> void:
 		IncidentType.DISTURBANCE:
 			_build_disturbance_incident(root)
 
+	# Emergency scenes get a real responding vehicle from the traffic fleet.
+	# It is created on a distant road segment and drives here through traffic.
+	if type == IncidentType.POLICE_ATTENDING or type == IncidentType.DISTURBANCE:
+		_request_responder(pos, "police")
+	elif type == IncidentType.AMBULANCE_CALL:
+		_request_responder(pos, "ambulance")
+	elif type == IncidentType.COLLISION and randf() < 0.5:
+		_request_responder(pos, "ambulance")
+
 	active_incidents.append(inc_data)
 	incident_started.emit(INCIDENT_NAMES[type], pos)
+
+
+func _request_responder(position: Vector3, kind: String) -> void:
+	var traffic_mgrs := get_tree().get_nodes_in_group("traffic_managers")
+	if not traffic_mgrs.is_empty() and traffic_mgrs[0].has_method("request_emergency_response"):
+		traffic_mgrs[0].call("request_emergency_response", position, kind)
 
 
 func _build_collision_incident(root: Node3D) -> void:
@@ -165,7 +208,6 @@ func _build_collision_incident(root: Node3D) -> void:
 	driver2.position = Vector3(1.4, 0.15, 1.6)
 	driver2.rotation.y = -PI * 0.5
 	
-	Art.label(root, Vector3(0, 2.8, 0), "MINOR COLLISION · EXCHANGING DETAILS", 16)
 
 
 func _build_breakdown_incident(root: Node3D) -> void:
@@ -187,7 +229,6 @@ func _build_breakdown_incident(root: Node3D) -> void:
 	# Emergency hazard warning triangle on road behind car
 	var tri := Art.cylinder(root, Vector3(0, 0.35, 6.0), 0.38, 0.05, Color("e74c3c"), 0.0)
 	tri.rotation.x = PI * 0.5
-	Art.label(root, Vector3(0, 2.5, 0), "VEHICLE BREAKDOWN · ROADSIDE ASSIST CALLED", 16)
 
 
 func _build_police_incident(root: Node3D) -> void:
@@ -213,7 +254,6 @@ func _build_police_incident(root: Node3D) -> void:
 	citizen.position = Vector3(3.4, 0.15, 0.0)
 	citizen.rotation.y = -PI * 0.6
 	
-	Art.label(root, Vector3(0, 2.7, 0), "NSW POLICE · ATTENDING AN INCIDENT", 16)
 
 
 func _build_ambulance_incident(root: Node3D) -> void:
@@ -230,7 +270,6 @@ func _build_ambulance_incident(root: Node3D) -> void:
 	
 	var patient := Art.box(root, Vector3(3.6, 0.25, 0.2), Vector3(0.6, 0.3, 1.8), Color("bdc3c7"))
 	
-	Art.label(root, Vector3(0, 3.2, 0), "NSW AMBULANCE · MEDICAL EMERGENCY", 16)
 
 
 func _build_roadworks_incident(root: Node3D) -> void:
@@ -243,7 +282,6 @@ func _build_roadworks_incident(root: Node3D) -> void:
 
 	# Flashing amber warning board
 	var board := Art.box(root, Vector3(0, 1.6, -7.5), Vector3(2.0, 1.4, 0.15), Color("f39c12"))
-	Art.label(root, Vector3(0, 1.6, -7.4), "ROADWORK\nAHEAD · 40", 18)
 	
 	# Worker in high-vis
 	var worker := Art.person(root, Color("f39c12"))
@@ -266,7 +304,6 @@ func _build_disturbance_incident(root: Node3D) -> void:
 	bystander.position = Vector3(0.0, 0.15, 2.5)
 	bystander.rotation.y = 0.0
 	
-	Art.label(root, Vector3(0, 2.4, 0), "HEATED VERBAL ARGUMENT", 16)
 
 
 func _add_hazard_lights(parent: Node3D, pos: Vector3, width: float, length: float) -> void:
@@ -283,7 +320,7 @@ func _add_hazard_lights(parent: Node3D, pos: Vector3, width: float, length: floa
 	parent.add_child(r_flasher)
 
 	# Tween blink loop
-	var tween := create_tween().set_loops()
+	var tween := create_tween().set_loops().bind_node(parent)
 	tween.tween_property(l_flasher, "light_energy", 3.0, 0.35)
 	tween.parallel().tween_property(r_flasher, "light_energy", 3.0, 0.35)
 	tween.tween_property(l_flasher, "light_energy", 0.0, 0.35)
@@ -303,7 +340,7 @@ func _add_flashing_emergency_lights(parent: Node3D, pos: Vector3, is_police: boo
 	blue.omni_range = 10.0
 	parent.add_child(blue)
 
-	var tween := create_tween().set_loops()
+	var tween := create_tween().set_loops().bind_node(parent)
 	tween.tween_property(red, "light_energy", 2.2, 0.14)
 	tween.parallel().tween_property(blue, "light_energy", 0.1, 0.14)
 	tween.tween_property(red, "light_energy", 0.1, 0.14)

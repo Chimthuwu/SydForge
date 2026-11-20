@@ -64,6 +64,15 @@ var blocked_time: float = 0.0
 var _can_change_lane: bool = false
 var _traffic_manager: Node3D
 
+## Set by the incident manager for responders, and by the world director for
+## dangerous-driving reactions. Neither is a teleport: the car keeps following
+## its road spline while these states adjust speed and direction choice.
+var _destination: Vector3 = Vector3.ZERO
+var _has_destination: bool = false
+var _threat_position: Vector3 = Vector3.ZERO
+var _threat_time: float = 0.0
+var _pulled_over: bool = false
+
 var is_player_controlled: bool:
 	get:
 		return driver != null
@@ -473,9 +482,13 @@ func _physics_process(delta: float) -> void:
 	if dist_to_target < 3.8:
 		current_point_idx += road_forward_dir
 		if current_point_idx < 0 or current_point_idx >= road_points.size():
-			road_forward_dir = -road_forward_dir
-			current_point_idx += road_forward_dir * 2
-			current_point_idx = clampi(current_point_idx, 0, road_points.size() - 1)
+			if _has_destination and road_points.size() > 1:
+				var end_a := road_points[0].distance_to(_destination)
+				var end_b := road_points[road_points.size() - 1].distance_to(_destination)
+				road_forward_dir = 1 if end_b < end_a else -1
+			else:
+				road_forward_dir = -road_forward_dir
+			current_point_idx = 0 if road_forward_dir == 1 else road_points.size() - 1
 		target_pt = _get_target_waypoint(current_point_idx)
 		to_target = (target_pt - global_position)
 		to_target.y = 0.0
@@ -491,6 +504,24 @@ func _physics_process(delta: float) -> void:
 	# 6. Adaptive Acceleration / Braking
 	var should_stop := traffic_signal_stop
 	var desired_speed := max_speed * curve_slowdown
+
+	_threat_time = maxf(0.0, _threat_time - step)
+	if _threat_time > 0.0:
+		desired_speed = minf(desired_speed, max_speed * 0.5)
+
+	# Pedestrian crossings: ease through zebra approaches even when no signal
+	# is installed. This uses the crossing records already indexed by the manager.
+	if _is_approaching_crossing():
+		desired_speed = minf(desired_speed, max_speed * 0.45)
+
+	# Temporary obstructions (collisions, roadworks) are avoided rather than
+	# driven through. A lane change is attempted once before coming to a stop.
+	if _traffic_manager != null and _traffic_manager.has_method("is_road_blocked"):
+		var look_ahead := global_position + (-global_transform.basis.z) * 9.0
+		if bool(_traffic_manager.call("is_road_blocked", look_ahead)):
+			desired_speed = 0.0
+			if blocked_time <= 0.1:
+				_attempt_lane_change()
 
 	if is_yielding:
 		desired_speed = 0.0
@@ -560,6 +591,30 @@ func _check_emergency_yielding() -> void:
 
 func is_responding_emergency() -> bool:
 	return is_emergency_vehicle and is_emergency_responding
+
+
+func set_destination(point: Vector3) -> void:
+	_destination = point
+	_has_destination = true
+
+
+## Player-driven dangerous driving: nearby traffic eases off and edges toward
+## the kerb instead of swerving unpredictably into the player's path.
+func notice_player_threat(point: Vector3) -> void:
+	if is_emergency_vehicle:
+		return
+	_threat_position = point
+	_threat_time = 4.0
+	target_lane_offset = lane_offset + 0.9
+
+
+
+func _is_approaching_crossing() -> bool:
+	if _traffic_manager == null:
+		_traffic_manager = get_tree().get_first_node_in_group("traffic_managers") as Node3D
+	if _traffic_manager == null or not _traffic_manager.has_method("should_slow_for_crossing"):
+		return false
+	return bool(_traffic_manager.call("should_slow_for_crossing", global_position, -global_transform.basis.z))
 
 
 func _check_traffic_signals_and_intersections() -> bool:

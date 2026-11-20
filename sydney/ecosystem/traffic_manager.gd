@@ -21,13 +21,128 @@ var _signal_cycle_time: float = 0.0
 
 # Time-of-day profile
 var current_period: String = "morning"
+var activity_period: String = "morning"
 var is_night: bool = false
 var _spawn_timer: float = 0.0
+
+## District density multiplier owned by WorldSimulationDirector.
+var density_multiplier: float = 1.0
+var _base_cap: int = 40
+
+## Temporary road obstructions (incidents, roadworks, collisions). Cars slow
+## and, where possible, change lanes instead of driving through them.
+var obstructions: Array[Dictionary] = []
+var _emergency_dispatch_cooldown: float = 0.0
 
 
 func _ready() -> void:
 	add_to_group("traffic_managers")
+	_base_cap = max_active_vehicles
 	_connect_time_manager()
+
+
+func set_density_multiplier(value: float) -> void:
+	density_multiplier = clampf(value, 0.35, 1.5)
+	_apply_time_profile()
+
+
+func add_obstruction(position: Vector3, radius: float = 6.0, ttl: float = 40.0) -> void:
+	obstructions.append({"pos": position, "radius": maxf(radius, 2.0), "ttl": maxf(ttl, 1.0)})
+	if obstructions.size() > 8:
+		obstructions.remove_at(0)
+
+
+func is_road_blocked(position: Vector3) -> bool:
+	for obstruction in obstructions:
+		if position.distance_to(obstruction["pos"]) < float(obstruction["radius"]):
+			return true
+	return false
+
+
+## Crossings are indexed from the world export. Cars slow within 12 m of a
+## zebra they are heading toward, whether or not a signal is installed.
+func should_slow_for_crossing(position: Vector3, heading: Vector3) -> bool:
+	for crossing in crossings:
+		var offset: Vector3 = crossing["pos"] - position
+		var dist := offset.length()
+		if dist > 1.0 and dist < 12.0 and heading.dot(offset / dist) > 0.55:
+			return true
+	return false
+
+
+func warn_nearby(position: Vector3, radius: float) -> void:
+	for vehicle in active_vehicles:
+		if is_instance_valid(vehicle) and vehicle.global_position.distance_to(position) < radius:
+			if vehicle.has_method("notice_player_threat"):
+				vehicle.call("notice_player_threat", position)
+
+
+## Dispatch a real AI emergency vehicle from the existing fleet. It is created
+## on a road segment at least 70 m from the player and drives toward the incident
+## rather than teleporting into place.
+func request_emergency_response(incident_pos: Vector3, kind: String = "police") -> bool:
+	if _emergency_dispatch_cooldown > 0.0 or road_data.is_empty() or player_ref == null:
+		return false
+	var responders := 0
+	for vehicle in active_vehicles:
+		if is_instance_valid(vehicle) and vehicle.has_method("is_responding_emergency") and vehicle.call("is_responding_emergency"):
+			responders += 1
+	if responders >= 2:
+		return false
+
+	var destination := incident_pos
+	var best_road: Dictionary = {}
+	var best_spawn := Vector3.ZERO
+	var best_score := INF
+	for road in road_data:
+		var pts: Array[Vector3] = road["points"]
+		if pts.size() < 3:
+			continue
+		for i in range(1, pts.size() - 1):
+			var pt := pts[i]
+			var from_player := player_ref.global_position.distance_to(pt)
+			var to_incident := pt.distance_to(destination)
+			if from_player < 70.0 or to_incident > 160.0 or to_incident < 20.0:
+				continue
+			var score := to_incident + absf(from_player - 110.0) * 0.2
+			if score < best_score:
+				best_score = score
+				best_road = road
+				best_spawn = pt
+	if best_road.is_empty():
+		return false
+
+	var vclass := VehicleVisualBuilder.VehicleClass.POLICE
+	if kind == "ambulance":
+		vclass = VehicleVisualBuilder.VehicleClass.AMBULANCE
+	elif kind == "fire" or kind == "fire_truck":
+		vclass = VehicleVisualBuilder.VehicleClass.FIRE_TRUCK
+
+	var controller := VehicleTrafficController.new()
+	controller.vehicle_class = vclass
+	add_child(controller)
+	# Choose the route direction whose end sits closest to the incident.
+	var pts: Array[Vector3] = best_road["points"]
+	var forward := pts[pts.size() - 1].distance_to(destination) < pts[0].distance_to(destination)
+	var nearest_idx := 0
+	var nearest_dist := INF
+	for i in pts.size():
+		var d := pts[i].distance_to(best_spawn)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest_idx = i
+	controller.setup_route(pts, 2.4, forward)
+	# setup_route begins at the road end; shift onto the chosen segment and let
+	# the controller pick the nearest waypoint from there.
+	controller.global_position = pts[nearest_idx] + Vector3.UP * 0.2
+	controller.current_point_idx = nearest_idx if forward else nearest_idx
+	controller.road_forward_dir = 1 if forward else -1
+	controller.set_emergency_responding(true)
+	if controller.has_method("set_destination"):
+		controller.call("set_destination", destination)
+	active_vehicles.append(controller)
+	_emergency_dispatch_cooldown = 25.0
+	return true
 
 
 func setup(world: SydneyWorld, player: Node3D) -> void:
@@ -45,6 +160,8 @@ func _connect_time_manager() -> void:
 		is_night = bool(tm.get("is_night"))
 		if tm.has_signal("period_changed"):
 			tm.period_changed.connect(_on_period_changed)
+		if tm.has_signal("activity_period_changed"):
+			tm.activity_period_changed.connect(_on_activity_period_changed)
 		if tm.has_signal("night_mode_changed"):
 			tm.night_mode_changed.connect(_on_night_mode_changed)
 		_apply_time_profile()
@@ -55,25 +172,35 @@ func _on_period_changed(period_name: String) -> void:
 	_apply_time_profile()
 
 
+func _on_activity_period_changed(period_name: String) -> void:
+	activity_period = period_name
+	_apply_time_profile()
+
+
 func _on_night_mode_changed(night: bool) -> void:
 	is_night = night
 	_apply_time_profile()
 
 
 func _apply_time_profile() -> void:
-	match current_period:
-		"morning":
-			max_active_vehicles = 45 # Commuter peak
-		"midday":
-			max_active_vehicles = 38 # Commercial/shopping
-		"afternoon":
-			max_active_vehicles = 45 # Afternoon peak
-		"evening":
-			max_active_vehicles = 32 # Dining & entertainment
-		"night", "pre-dawn":
-			max_active_vehicles = 20 # Quiet streets, nightlife hubs
-		_:
-			max_active_vehicles = 35
+	var period := activity_period
+	if not period in ["morning", "daytime", "afternoon", "evening", "night"]:
+		# Backwards compatibility for callers that only set the detailed period.
+		match current_period:
+			"morning", "dawn": period = "morning"
+			"midday": period = "daytime"
+			"afternoon": period = "afternoon"
+			"sunset", "dusk": period = "evening"
+			"night", "pre-dawn": period = "night"
+	var cap: int
+	match period:
+		"morning": cap = 46 # Commuter peak
+		"daytime": cap = 38 # Commercial / shopping
+		"afternoon": cap = 46 # Afternoon peak
+		"evening": cap = 34 # Dining & entertainment
+		"night": cap = 22 # Quiet residential, busy nightlife hubs
+		_: cap = 38
+	max_active_vehicles = maxi(6, int(float(cap) * density_multiplier))
 
 
 ## Stage B exports lanes as a list per direction; earlier exports used a scalar.
@@ -141,6 +268,14 @@ func _index_junctions_and_crossings() -> void:
 
 
 func _process(delta: float) -> void:
+	_emergency_dispatch_cooldown = maxf(0.0, _emergency_dispatch_cooldown - delta)
+	var i := obstructions.size() - 1
+	while i >= 0:
+		obstructions[i]["ttl"] = float(obstructions[i]["ttl"]) - delta
+		if float(obstructions[i]["ttl"]) <= 0.0:
+			obstructions.remove_at(i)
+		i -= 1
+
 	# Update traffic signal cycle: 40s full cycle
 	# 0-17s: North-South Green (East-West Red)
 	# 17-20s: North-South Amber
@@ -226,7 +361,7 @@ func _spawn_traffic_near_player() -> void:
 		var pts: Array[Vector3] = r["points"]
 		var mid := pts[pts.size() / 2]
 		var dist := p_pos.distance_to(mid)
-		if dist > 35.0 and dist < spawn_radius:
+		if dist > 45.0 and dist < spawn_radius and not is_road_blocked(mid):
 			candidates.append(r)
 	
 	if candidates.is_empty():

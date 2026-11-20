@@ -33,6 +33,7 @@ var _target_wind: float = 0.15
 var _weather_timer: float = 300.0
 var _thunder_timer: float = 0.0
 var _shader_update_timer: float = 0.0
+var _time_manager: Node = null
 
 # Node references
 var world_env: WorldEnvironment
@@ -254,14 +255,14 @@ func _apply_weather_effects() -> void:
 		for mat in _facade_materials:
 			mat.set_shader_parameter("wetness", wetness)
 
-	# 2. Update directional light (sun)
-	if directional_light != null:
-		var sun_attenuation := 1.0 - overcast_factor * 0.65
-		directional_light.light_energy = clampf(0.85 * sun_attenuation, 0.15, 0.95)
-		if overcast_factor > 0.5:
-			directional_light.light_color = Color("ffe1ac").lerp(Color("a8b8c8"), (overcast_factor - 0.5) * 2.0)
-		else:
-			directional_light.light_color = Color("ffe1ac")
+	# 2. Supply weather factors to WorldTimeManager, the sole owner of the sun.
+	# Writing light_energy here used to be overwritten by the time manager on
+	# the very next frame, so overcast skies never actually darkened the city.
+	if not is_instance_valid(_time_manager):
+		var time_mgrs := get_tree().get_nodes_in_group("time_managers")
+		_time_manager = time_mgrs[0] if not time_mgrs.is_empty() else null
+	if _time_manager != null and _time_manager.has_method("set_weather_factors"):
+		_time_manager.call("set_weather_factors", overcast_factor, rain_intensity)
 
 	# 3. Update world environment (fog & ambient light)
 	if world_env != null and world_env.environment != null:

@@ -166,7 +166,11 @@ var active_venues: Array[Dictionary] = []
 var venue_nodes: Dictionary = {}
 var player_ref: Node3D
 var current_time_hours: float = 11.0
+var activity_period: String = "daytime"
 var _seated_npc_nodes: Array[Node3D] = []
+var _patrons: Array[Node3D] = []
+var _patron_timer: float = 0.0
+var _peds_manager: Node = null
 
 
 func _ready() -> void:
@@ -177,6 +181,54 @@ func _ready() -> void:
 
 func setup(player: Node3D) -> void:
 	player_ref = player
+
+
+func set_activity_period(period: String) -> void:
+	activity_period = period
+
+
+## Open venues feed real pedestrians into the shared population near the
+## player, rather than a separate frozen crowd at each storefront.
+func _process(delta: float) -> void:
+	_patron_timer += delta
+	if _patron_timer < 9.0:
+		return
+	_patron_timer = 0.0
+	_update_patrons()
+
+
+func _update_patrons() -> void:
+	var i := _patrons.size() - 1
+	while i >= 0:
+		if not is_instance_valid(_patrons[i]):
+			_patrons.remove_at(i)
+		i -= 1
+	if _patrons.size() >= 8 or player_ref == null:
+		return
+	if _peds_manager == null or not is_instance_valid(_peds_manager):
+		var managers := get_tree().get_nodes_in_group("pedestrian_managers")
+		_peds_manager = managers[0] if not managers.is_empty() else null
+	if _peds_manager == null or not _peds_manager.has_method("spawn_patron_at"):
+		return
+	for venue in active_venues:
+		if not is_venue_open(venue):
+			continue
+		if player_ref.global_position.distance_to(venue["pos"]) > 95.0:
+			continue
+		if randf() > 0.55:
+			continue
+		var archetype := "cafe"
+		var vtype := int(venue.get("type", VenueType.CAFE))
+		if vtype == VenueType.PUB_CLUB:
+			archetype = "nightlife" if activity_period in ["evening", "night"] else "hospitality"
+		elif vtype == VenueType.RESTAURANT:
+			archetype = "hospitality"
+		elif vtype == VenueType.BUS_STOP:
+			archetype = "commuter"
+		var ped: Node3D = _peds_manager.call("spawn_patron_at", venue["pos"], archetype)
+		if ped != null:
+			_patrons.append(ped)
+			break
 
 
 func _connect_time_manager() -> void:

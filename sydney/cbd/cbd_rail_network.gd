@@ -14,6 +14,13 @@ const SLEEPER_SPACING := 3.0
 const RAIL_OFFSET := 0.7175
 const MAX_ROUTE_GAP := 180.0
 
+## A 6.8 m bore only fits under the flat city slab once its track is deep
+## enough. Starting the enclosure while the track is still at road grade stood
+## a 6 m concrete box in the middle of the Bradfield Highway.
+const TUNNEL_WALL_HEIGHT := 6.8
+const TUNNEL_ROOF_CLEARANCE := 0.6
+const TUNNEL_MIN_TRACK_Y := -(TUNNEL_WALL_HEIGHT - 0.15 + TUNNEL_ROOF_CLEARANCE)
+
 var source: Dictionary = {}
 var stats: Dictionary = {}
 var main_route_points: Array[Vector3] = []
@@ -474,30 +481,25 @@ func _build_southern_bridge_portal() -> void:
 	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
 	var portal_index := _bridge_range.y
 	if wynyard_idx > _bridge_range.y:
-		# Match the descent profile: approach stays open, portal sits where the
-		# corridor drops from near-surface grade into the enclosed bore.
-		portal_index = clampi(_bridge_range.y + 22, _bridge_range.y + 1, wynyard_idx - 1)
+		# A low-grade entry marker at the start of the dive, not a six-metre
+		# gateway planted on the carriageway further down the descent.
+		portal_index = clampi(_bridge_range.y + 6, _bridge_range.y + 1, wynyard_idx - 1)
 	var position := main_route_points[portal_index]
 	var forward := _route_direction(portal_index)
 	var portal := Node3D.new()
 	portal.name = "WynyardRailTunnelPortal"
-	portal.position = position
+	portal.position = Vector3(position.x, 0.0, position.z)
 	portal.rotation.y = atan2(-forward.x, -forward.z)
 	add_child(portal)
-	# Twin heavy-rail mouths mark the transition from open approach into the
-	# enclosed underground bore toward Wynyard.
-	ART.box(portal, Vector3(0.0, 3.0, 0.55), Vector3(8.2, 6.2, 1.1), Color("77736a"))
+	# Flush stone coping and short side piers read as a rail cutting mouth while
+	# staying below the sightline of traffic on the approach roads.
+	ART.box(portal, Vector3(0.0, 0.3, 0.55), Vector3(8.2, 0.6, 1.1), Color("77736a"))
 	for side in [-1.0, 1.0]:
 		ART.box(
-			portal, Vector3(side * 1.9, 2.0, -0.08),
-			Vector3(2.2, 4.0, 0.08), Color("101820")
+			portal, Vector3(side * 3.25, 0.7, 0.0),
+			Vector3(0.45, 1.4, 1.25), Color("a59a82")
 		)
-		ART.box(
-			portal, Vector3(side * 3.25, 2.1, 0.0),
-			Vector3(0.45, 4.3, 1.25), Color("a59a82")
-		)
-	ART.box(portal, Vector3(0.0, 5.3, 0.0), Vector3(7.2, 0.48, 1.35), Color("b8ac91"))
-	ART.label(portal, Vector3(0.0, 6.0, 0.0), "CITY RAIL TUNNEL", 24)
+	ART.box(portal, Vector3(0.0, 1.35, 0.0), Vector3(7.2, 0.3, 1.35), Color("b8ac91"))
 
 
 func _build_central_emergence_portal() -> void:
@@ -515,21 +517,16 @@ func _build_central_emergence_portal() -> void:
 	var forward := _route_direction(portal_idx)
 	var portal := Node3D.new()
 	portal.name = "CentralRailEmergencePortal"
-	portal.position = position
+	portal.position = Vector3(position.x, 0.0, position.z)
 	portal.rotation.y = atan2(-forward.x, -forward.z)
 	add_child(portal)
-	ART.box(portal, Vector3(0.0, 2.8, 0.4), Vector3(8.4, 5.8, 1.0), Color("726d63"))
+	ART.box(portal, Vector3(0.0, 0.3, 0.4), Vector3(8.4, 0.6, 1.0), Color("726d63"))
 	for side in [-1.0, 1.0]:
 		ART.box(
-			portal, Vector3(side * 1.95, 1.9, -0.05),
-			Vector3(2.3, 3.8, 0.08), Color("121a20")
+			portal, Vector3(side * 3.35, 0.7, 0.0),
+			Vector3(0.45, 1.4, 1.15), Color("a19782")
 		)
-		ART.box(
-			portal, Vector3(side * 3.35, 2.0, 0.0),
-			Vector3(0.45, 4.1, 1.15), Color("a19782")
-		)
-	ART.box(portal, Vector3(0.0, 5.0, 0.0), Vector3(7.4, 0.42, 1.25), Color("b6aa90"))
-	ART.label(portal, Vector3(0.0, 5.7, 0.0), "RAIL TUNNEL EXIT", 22)
+	ART.box(portal, Vector3(0.0, 1.35, 0.0), Vector3(7.4, 0.3, 1.25), Color("b6aa90"))
 
 
 func _build_station_shell(
@@ -731,14 +728,13 @@ func _is_tunnel_segment(segment_index: int) -> bool:
 		if absi(segment_index - idx) <= 10:
 			return false
 
-	# Southern bridge descent: the track dives from surface/approach level into
-	# the underground bore between the Harbour Bridge and Wynyard. Enclose this
-	# transition once it drops below grade so the train does not pass through
-	# ground/buildings, while keeping the immediate portal mouth open.
+	# Southern bridge descent: only enclose once the whole bore roof is below
+	# grade. At road grade (y ≈ 0.15) a 6.8 m wall would stand on the asphalt;
+	# the train now disappears under the surface slab before the bore starts.
 	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
 	if _bridge_range.y >= 0 and wynyard_idx > _bridge_range.y \
 	and segment_index > _bridge_range.y + 18 and segment_index < wynyard_idx - 10:
-		if mid_y <= 0.2:
+		if mid_y <= TUNNEL_MIN_TRACK_Y:
 			return true
 
 	# Keep ascent/descent mouths slightly open near Central emergence.
@@ -746,7 +742,7 @@ func _is_tunnel_segment(segment_index: int) -> bool:
 	if central_idx >= 0 and segment_index >= central_idx - 8 and segment_index <= central_idx + 2:
 		return false
 
-	return mid_y <= -1.5
+	return mid_y <= TUNNEL_MIN_TRACK_Y
 
 
 func _build_tunnel_enclosures() -> void:
@@ -784,7 +780,7 @@ func _build_tunnel_enclosures() -> void:
 		var track_y := (a.y + b.y) * 0.5
 		var tunnel_half_w := 5.4
 		var wall_thickness := 0.55
-		var wall_height := 6.8
+		var wall_height := TUNNEL_WALL_HEIGHT
 		var wall_center_y := track_y + wall_height * 0.5 - 0.15
 		var ceiling_y := track_y + wall_height - 0.2
 

@@ -35,6 +35,13 @@ var idle_anim_time: float = 0.0
 var health: float = 100.0
 var is_dead: bool = false
 
+## World reactivity: short-lived flee/duck-aside state. The routine (activity,
+## current/target graph nodes) is restored when the disturbance passes.
+var _flee_time: float = 0.0
+var _flee_dir: Vector3 = Vector3.ZERO
+var _prior_activity: int = Activity.WALK
+var _avoid_check: float = 0.0
+
 # Appearance / identity
 var _skin_color: Color = Color("d9a079")
 var _shirt_color: Color = Color("3d4850")
@@ -362,10 +369,60 @@ func _sphere(parent: Node3D, pos: Vector3, radius: float, color: Color) -> MeshI
 	return mesh
 
 
+## Enter a brief self-preservation state, then resume the normal routine.
+func react_to_threat(threat_position: Vector3, duration: float = 3.0) -> void:
+	if is_dead or duration <= 0.0:
+		return
+	var away := global_position - threat_position
+	away.y = 0.0
+	if away.length_squared() < 0.01:
+		away = Vector3(randf_range(-1.0, 1.0), 0.0, randf_range(-1.0, 1.0))
+	_flee_dir = away.normalized()
+	if _flee_time <= 0.0:
+		_prior_activity = activity
+	_flee_time = maxf(_flee_time, clampf(duration, 0.4, 6.0))
+	is_waiting = false
+	activity = Activity.WALK
+
+
+func _check_vehicle_proximity() -> void:
+	var cars := get_tree().get_nodes_in_group("traffic_vehicles")
+	for car: Node in cars:
+		if not (car is Node3D):
+			continue
+		var offset := (car as Node3D).global_position - global_position
+		offset.y = 0.0
+		var dist_sq := offset.length_squared()
+		if dist_sq < 49.0:
+			var forward: Vector3 = -(car as Node3D).global_transform.basis.z
+			var approaching := forward.dot(-offset.normalized()) > 0.25
+			if approaching and dist_sq < 25.0:
+				react_to_threat((car as Node3D).global_position, 1.8)
+				return
+
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
 	var step := delta
+	_avoid_check += delta
+	if _avoid_check >= 0.5:
+		_avoid_check = 0.0
+		_check_vehicle_proximity()
+	if _flee_time > 0.0:
+		_flee_time -= step
+		var speed := walk_speed * 1.7
+		var scaled := speed * (step / maxf(get_physics_process_delta_time(), 0.0001))
+		velocity.x = _flee_dir.x * scaled
+		velocity.z = _flee_dir.z * scaled
+		velocity.y -= 9.8 * step
+		rotation.y = atan2(-_flee_dir.x, -_flee_dir.z)
+		move_and_slide()
+		_animate_walking(speed, step)
+		if _flee_time <= 0.0:
+			activity = _prior_activity
+			_pick_next_target()
+		return
 	if _player == null:
 		_player = get_tree().get_first_node_in_group("player") as Node3D
 	if _player != null:

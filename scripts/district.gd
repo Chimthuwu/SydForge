@@ -204,13 +204,26 @@ func interact() -> void:
 		return
 	if player.vehicle != null:
 		player.vehicle.call("exit_vehicle")
-	else:
-		find_nearest_vehicle()
-		if nearest != null:
-			var wanted := get_node_or_null("WantedSystem")
-			if nearest.is_in_group("traffic_vehicles") and wanted != null:
-				wanted.add_crime(8.0, "GRAND THEFT AUTO · police alerted")
-			nearest.call("enter", player)
+		return
+	# Vehicles keep priority: a cafe can be authored right beside a parked car,
+	# and E must never be stolen by a storefront when the player is reaching for
+	# a door handle.
+	find_nearest_vehicle()
+	if nearest != null:
+		var wanted := get_node_or_null("WantedSystem")
+		if nearest.is_in_group("traffic_vehicles") and wanted != null:
+			wanted.add_crime(8.0, "GRAND THEFT AUTO · police alerted")
+		nearest.call("enter", player)
+		return
+	# Lightweight venue entrances (cafes, pubs, takeaways, bus stops). The
+	# BusinessManager owns schedules and benefits; E just forwards the intent.
+	for manager: Node in get_tree().get_nodes_in_group("business_managers"):
+		if not manager.has_method("find_nearest_interactive_venue"):
+			continue
+		var venue: Dictionary = manager.call("find_nearest_interactive_venue", player.global_position, 4.5)
+		if not venue.is_empty():
+			manager.call("interact_with_venue", venue, player)
+			return
 
 
 func _nearest_supermarket() -> Node3D:
@@ -621,3 +634,8 @@ func gunshot(kind: Variant = "pistol") -> void:
 	# One report per shot. The old code created a new player per shot and the
 	# 3D duplicate made every round read twice as loud.
 	audio.play_weapon(weapon)
+	# The living world hears gunfire: pedestrians scatter, ambient scenes break
+	# up and, with a cooldown, police attend. No weapon volume change here.
+	var sim := get_node_or_null("WorldSimulationDirector")
+	if sim != null and sim.has_method("report_event") and player != null:
+		sim.call("report_event", "gunfire", player.global_position, 1.0)

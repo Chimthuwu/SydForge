@@ -27,10 +27,17 @@ const WildlifeManagerScript := preload("res://sydney/ecosystem/wildlife_manager.
 const HarbourBoatsScript := preload("res://sydney/harbour/harbour_boats.gd")
 const TrainManagerScript := preload("res://sydney/railway/train_manager.gd")
 const WantedSystemScript := preload("res://scripts/wanted_system.gd")
+const WeatherManagerScript := preload("res://sydney/ecosystem/weather_manager.gd")
+const BusinessManagerScript := preload("res://sydney/ecosystem/business_manager.gd")
+const AmbientEventDirectorScript := preload("res://sydney/ecosystem/ambient_event_director.gd")
+const EmergencyIncidentManagerScript := preload("res://sydney/ecosystem/emergency_incident_manager.gd")
+const AmbientAudioDirectorScript := preload("res://sydney/ecosystem/ambient_audio_director.gd")
+const WorldSimulationDirectorScript := preload("res://sydney/ecosystem/world_simulation_director.gd")
 
 const BRIDGE_OPERA_XZ := Vector2(658.72, -1763.81)
 
 var cbd_world
+var world_sim
 
 
 func _sydney_requested() -> bool:
@@ -216,3 +223,42 @@ func _initialize_living_ecosystem() -> void:
 	wanted.add_to_group("wanted_system")
 	add_child(wanted)
 	wanted.setup(player)
+
+	# 9. Weather and environmental atmosphere. It supplies overcast/rain factors
+	#    to the time manager, which remains the sole owner of sun and sky.
+	var weather := WeatherManagerScript.new()
+	weather.name = "WeatherManager"
+	add_child(weather)
+	weather.setup(player)
+
+	# 10. Businesses, venues, outdoor dining and operating hours
+	var business := BusinessManagerScript.new()
+	business.name = "BusinessManager"
+	add_child(business)
+	business.setup(player)
+
+	# 11. Shared ambient soundscape (eight crossfaded beds, not hundreds of voices)
+	var amb_audio := AmbientAudioDirectorScript.new()
+	amb_audio.name = "AmbientAudioDirector"
+	add_child(amb_audio)
+	amb_audio.setup(player)
+
+	# 12. Controlled emergency incidents and real responding traffic
+	var incidents := EmergencyIncidentManagerScript.new()
+	incidents.name = "EmergencyIncidentManager"
+	add_child(incidents)
+	incidents.setup(cbd_world, player)
+
+	# 13. Believable, infrequent ambient micro-events
+	var events := AmbientEventDirectorScript.new()
+	events.name = "AmbientEventDirector"
+	add_child(events)
+	events.setup(cbd_world, player)
+
+	# 14. Central coordinator: activity profiles, district budgets and the
+	#     single world-event bus used for all world reactivity.
+	var sim := WorldSimulationDirectorScript.new()
+	sim.name = "WorldSimulationDirector"
+	add_child(sim)
+	sim.setup(self, player)
+	world_sim = sim

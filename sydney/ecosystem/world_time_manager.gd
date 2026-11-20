@@ -7,6 +7,7 @@ extends Node
 
 signal time_changed(hours: float, formatted_time: String)
 signal period_changed(period_name: String)
+signal activity_period_changed(period_name: String)
 signal night_mode_changed(is_night: bool)
 signal lighting_factor_changed(factor: float)
 
@@ -20,9 +21,18 @@ signal lighting_factor_changed(factor: float)
 @export var time_multiplier: float = 1.0
 
 var current_period: String = "night"
+## Coarse, gameplay-facing period shared by every living-world system:
+## morning / daytime / afternoon / evening / night. The detailed `current_period`
+## remains for lighting and existing tests.
+var activity_period: String = "night"
 var is_night: bool = true
 var lighting_factor: float = 0.0
 var _lighting_emit_accum: float = 0.0
+
+## Weather is applied here so the sun and fog have one owner. WeatherManager
+## writes these factors; _apply_lighting consumes them every frame.
+var weather_overcast: float = 0.0
+var weather_rain: float = 0.0
 
 # Lighting references
 var world_env: WorldEnvironment
@@ -119,10 +129,33 @@ func _update_period(force: bool) -> void:
 	if force or p != current_period:
 		current_period = p
 		period_changed.emit(current_period)
-	
+
+	var activity_p := _activity_period_for(current_time_hours)
+	if force or activity_p != activity_period:
+		activity_period = activity_p
+		activity_period_changed.emit(activity_period)
+
 	if force or night != is_night:
 		is_night = night
 		night_mode_changed.emit(is_night)
+
+
+func _activity_period_for(hours: float) -> String:
+	if hours >= 6.0 and hours < 11.5:
+		return "morning"
+	if hours >= 11.5 and hours < 15.0:
+		return "daytime"
+	if hours >= 15.0 and hours < 17.5:
+		return "afternoon"
+	if hours >= 17.5 and hours < 21.0:
+		return "evening"
+	return "night"
+
+
+## WeatherManager calls this instead of writing sun/fog directly.
+func set_weather_factors(overcast: float, rain: float) -> void:
+	weather_overcast = clampf(overcast, 0.0, 1.0)
+	weather_rain = clampf(rain, 0.0, 1.0)
 
 func _apply_lighting(delta: float, force: bool = false) -> void:
 	var next_lighting_factor := _night_lighting_factor(current_time_hours)
@@ -241,10 +274,19 @@ func _apply_lighting(delta: float, force: bool = false) -> void:
 			sky_top = Color("050914").lerp(Color("26466b"), t)
 			sky_horizon = Color("121f30").lerp(Color("d69372"), t)
 
+	# Weather is layered on top of the time-of-day lighting rather than racing it.
+	# This keeps one owner (this manager) for sun/sky while WeatherManager only
+	# supplies the overcast and rain factors.
+	var weather_shade := 1.0 - weather_overcast * 0.62
+	light_energy = clampf(light_energy * weather_shade, 0.04, 1.2)
+	if weather_overcast > 0.01:
+		light_col = light_col.lerp(Color("a8b8c8"), clampf(weather_overcast, 0.0, 1.0))
+	ambient_energy = clampf(ambient_energy * (1.0 - weather_overcast * 0.12 - weather_rain * 0.06), 0.12, 0.8)
+
 	directional_light.rotation_degrees = Vector3(sun_pitch, sun_yaw, 0)
 	directional_light.light_color = light_col
 	directional_light.light_energy = light_energy
-	
+
 	env.ambient_light_color = ambient_col
 	env.ambient_light_energy = ambient_energy
 	

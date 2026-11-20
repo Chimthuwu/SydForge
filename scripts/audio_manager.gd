@@ -14,7 +14,20 @@ const BUS_LAYOUT := {
 	"Movement": -11.0,
 	"Vehicles": -7.0,
 	"Environment": -13.0,
+	"NPC": -14.0,
 	"UI": -8.0,
+}
+
+## Public mix categories. Weapon/vehicle/environment/NPC/music stay independently
+## controllable; the player-facing [ and ] keys still adjust Master only.
+const CATEGORY_BUSES := {
+	"weapons": "Weapons",
+	"vehicles": "Vehicles",
+	"environment": "Environment",
+	"npc": "NPC",
+	"music": "Music",
+	"movement": "Movement",
+	"ui": "UI",
 }
 
 ## peak: normalised sample peak of the generated stream.
@@ -337,8 +350,9 @@ func play_distant_siren(world_position: Vector3) -> void:
 	voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
 	voice.max_db = -12.0
 	voice.stream = stream
-	voice.global_position = world_position
+	# global_position is only valid once the node is inside the tree.
 	add_child(voice)
+	voice.global_position = world_position
 	voice.finished.connect(voice.queue_free)
 	voice.play()
 
@@ -361,6 +375,30 @@ func bus_volume(bus_name: String) -> float:
 	if index == -1:
 		return -80.0
 	return AudioServer.get_bus_volume_db(index)
+
+
+## Independent per-category volume control (dB). Unknown categories are ignored.
+func set_category_volume(category: String, db: float) -> void:
+	var bus_name: String = str(CATEGORY_BUSES.get(category.to_lower(), ""))
+	if bus_name.is_empty():
+		return
+	var index := AudioServer.get_bus_index(bus_name)
+	if index == -1:
+		return
+	AudioServer.set_bus_volume_db(index, clampf(db, -60.0, 6.0))
+
+
+func category_volume(category: String) -> float:
+	var bus_name: String = str(CATEGORY_BUSES.get(category.to_lower(), ""))
+	if bus_name.is_empty():
+		return -80.0
+	return bus_volume(bus_name)
+
+
+func adjust_category_volume(category: String, delta_db: float) -> float:
+	var next := category_volume(category) + delta_db
+	set_category_volume(category, next)
+	return category_volume(category)
 
 
 func weapon_peak(kind: String) -> float:

@@ -19,6 +19,11 @@ var active_pedestrians: Array[PedestrianController] = []
 var _update_timer: float = 0.0
 var _rng := RandomNumberGenerator.new()
 
+## District density multiplier, owned by WorldSimulationDirector. The base cap
+## is kept separately so repeated updates never compound the multiplier.
+var density_multiplier: float = 1.0
+var _base_cap: int = 70
+
 # Diverse skin tones (contemporary Sydney, incl. Aboriginal and Torres Strait Islander)
 const SKIN_TONES := [
 	Color("f6dfcf"), Color("f1d0b5"), Color("e7be9a"), Color("ddb07e"),
@@ -33,7 +38,50 @@ const HAIR_TONES := [
 
 func _ready() -> void:
 	add_to_group("pedestrian_managers")
+	_base_cap = max_active_pedestrians
 	_rng.randomize()
+
+
+func set_density_multiplier(value: float) -> void:
+	density_multiplier = clampf(value, 0.35, 1.6)
+	max_active_pedestrians = maxi(8, int(float(_base_cap) * density_multiplier))
+
+
+## Venue-driven patrons. BusinessManager asks for a patron outside an open
+## cafe/pub; the walker uses the real footpath graph and the same human model as
+## the ambient population, so venues feed the city rather than a separate cast.
+func spawn_patron_at(position: Vector3, archetype: String) -> Node3D:
+	if graph_nodes.is_empty() or node_ids_list.is_empty():
+		return null
+	var nearest_id := node_ids_list[0]
+	var nearest_dist := INF
+	for nid in node_ids_list:
+		var node: Dictionary = graph_nodes[nid]
+		var point := Vector3(float(node.get("x", 0.0)), 0.0, float(node.get("z", 0.0)))
+		var d := point.distance_squared_to(position)
+		if d < nearest_dist:
+			nearest_dist = d
+			nearest_id = nid
+	var hour := _current_hour()
+	var district := _district_at(position)
+	var profile := _base_profile(archetype, district, _is_night(hour))
+	_apply_activity_defaults(profile, archetype, _is_night(hour), _is_evening(hour))
+	var ped := PedestrianController.new()
+	add_child(ped)
+	ped.setup(nearest_id, graph_nodes)
+	ped.configure(profile)
+	active_pedestrians.append(ped)
+	return ped
+
+
+## World reactivity: nearby pedestrians break routine and move away from a
+## threat, then resume their graph walk through their own state machine.
+func alert_nearby(position: Vector3, radius: float) -> void:
+	for ped in active_pedestrians:
+		if not is_instance_valid(ped):
+			continue
+		if ped.global_position.distance_to(position) <= radius and ped.has_method("react_to_threat"):
+			ped.call("react_to_threat", position)
 
 
 func setup(world: SydneyWorld, player: Node3D) -> void:
@@ -125,9 +173,12 @@ func _spawn_pedestrians_near_player() -> void:
 
 
 func _current_hour() -> float:
-	var wtm := get_tree().get_first_node_in_group("world_time")
-	if wtm != null and "current_hour" in wtm:
-		return float(wtm.get("current_hour"))
+	# The canonical manager registers as "time_managers" and exposes
+	# current_time_hours. The old "world_time"/"current_hour" lookup always
+	# returned 14:00, which froze pedestrian archetypes to a single profile.
+	var wtm := get_tree().get_first_node_in_group("time_managers")
+	if wtm != null and "current_time_hours" in wtm:
+		return float(wtm.get("current_time_hours"))
 	return 14.0
 
 

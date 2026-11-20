@@ -39,6 +39,8 @@ var time_manager: Node
 var weather_manager: Node
 
 var _cooldown_timer: float = 20.0 # First check delay
+var _activity_period: String = "daytime"
+var _world_sim: Node = null
 
 
 func _ready() -> void:
@@ -50,6 +52,29 @@ func setup(world: SydneyWorld, player: Node3D) -> void:
 	player_ref = player
 	time_manager = get_tree().get_first_node_in_group("time_managers")
 	weather_manager = get_tree().get_first_node_in_group("weather_managers")
+	var sims := get_tree().get_nodes_in_group("world_simulation")
+	_world_sim = sims[0] if not sims.is_empty() else null
+	if time_manager != null and "activity_period" in time_manager:
+		_activity_period = str(time_manager.get("activity_period"))
+
+
+func set_activity_period(period: String) -> void:
+	_activity_period = period
+
+
+## Unusual activity (gunfire, a collision) breaks up nearby ambient scenes so
+## the city does not carry on oblivious to a disturbance.
+func interrupt_nearby(position: Vector3, radius: float) -> void:
+	var i := active_events.size() - 1
+	while i >= 0:
+		var ev: Dictionary = active_events[i]
+		if position.distance_to(ev["pos"]) <= radius:
+			var root: Node3D = ev["root"]
+			if is_instance_valid(root):
+				root.queue_free()
+			active_events.remove_at(i)
+		i -= 1
+	_cooldown_timer = maxf(_cooldown_timer, 12.0)
 
 
 func _process(delta: float) -> void:
@@ -122,11 +147,16 @@ func _attempt_trigger_event() -> void:
 
 	var chosen_type: int = candidate_types[randi() % candidate_types.size()]
 	
-	# Spawn position: 28m to 55m away, on a reasonable offset from player
-	var angle := randf() * TAU
-	var dist := randf_range(28.0, 52.0)
-	var spawn_pos := p_pos + Vector3(cos(angle) * dist, 0.0, sin(angle) * dist)
-	
+	# Spawn on an actual footpath node rather than an arbitrary point that can
+	# land inside a building or in the harbour.
+	var spawn_pos := p_pos
+	if _world_sim != null and _world_sim.has_method("find_pedestrian_point_near"):
+		spawn_pos = _world_sim.call("find_pedestrian_point_near", p_pos, 28.0, 55.0)
+	if spawn_pos.distance_to(p_pos) < 10.0:
+		var angle := randf() * TAU
+		var dist := randf_range(28.0, 52.0)
+		spawn_pos = p_pos + Vector3(cos(angle) * dist, 0.0, sin(angle) * dist)
+
 	_spawn_event(chosen_type, spawn_pos, district_id)
 
 
@@ -197,7 +227,6 @@ func _build_busker_event(root: Node3D) -> void:
 		spec.position = Vector3(offset_x, 0.15, -1.2)
 		spec.rotation.y = atan2(-spec.position.x, -spec.position.z)
 
-	Art.label(root, Vector3(0, 2.3, 0), "STREET BUSKER · LIVE ACOUSTIC", 14)
 
 
 func _build_tourist_photo_event(root: Node3D) -> void:
@@ -223,12 +252,11 @@ func _build_tourist_photo_event(root: Node3D) -> void:
 	root.add_child(flash_light)
 
 	# Flash tween trigger every 6 seconds
-	var tween := create_tween().set_loops()
+	var tween := create_tween().set_loops().bind_node(root)
 	tween.tween_interval(4.5)
 	tween.tween_property(flash_light, "light_energy", 6.0, 0.05)
 	tween.tween_property(flash_light, "light_energy", 0.0, 0.12)
 
-	Art.label(root, Vector3(0, 2.2, 0), "TOURISTS · SNAPSHOT MOMENT", 14)
 
 
 func _build_delivery_event(root: Node3D) -> void:
@@ -241,7 +269,6 @@ func _build_delivery_event(root: Node3D) -> void:
 	var trolley := Art.box(root, Vector3(1.6, 0.35, 2.0), Vector3(0.6, 0.7, 0.8), Color("34495e"))
 	Art.box(trolley, Vector3(0, 0.45, 0), Vector3(0.5, 0.4, 0.6), Color("bcaaa4")) # Parcel box
 	
-	Art.label(root, Vector3(0, 2.8, 0), "COURIER DELIVERY IN PROGRESS", 14)
 
 
 func _build_bus_boarding_event(root: Node3D) -> void:
@@ -258,7 +285,6 @@ func _build_bus_boarding_event(root: Node3D) -> void:
 	c2.position = Vector3(1.6, 0.15, -2.0)
 	c2.rotation.y = -PI * 0.5
 	
-	Art.label(root, Vector3(0, 3.6, 0), "PASSENGERS BOARDING BUS 333", 14)
 
 
 func _build_friends_greeting_event(root: Node3D) -> void:
@@ -274,7 +300,6 @@ func _build_friends_greeting_event(root: Node3D) -> void:
 	# Raised waving arm on f1
 	Art.box(f1, Vector3(0.25, 1.55, 0), Vector3(0.1, 0.4, 0.1), Color("27ae60"))
 
-	Art.label(root, Vector3(0, 2.2, 0), "FRIENDS CROSSING PATHS", 14)
 
 
 func _build_dog_walker_event(root: Node3D) -> void:
@@ -305,7 +330,6 @@ func _build_dog_walker_event(root: Node3D) -> void:
 	leash.rotation.x = 0.55
 	leash.rotation.z = -0.4
 
-	Art.label(root, Vector3(0, 2.2, 0), "WALKING THE DOG IN SYDNEY", 14)
 
 
 func _build_taxi_dropoff_event(root: Node3D) -> void:
@@ -317,7 +341,6 @@ func _build_taxi_dropoff_event(root: Node3D) -> void:
 	passenger.position = Vector3(1.6, 0.15, 0.2)
 	passenger.rotation.y = PI * 0.5
 
-	Art.label(root, Vector3(0, 2.5, 0), "TAXI PASSENGER ARRIVAL", 14)
 
 
 func _build_nightlife_exit_event(root: Node3D) -> void:
@@ -331,7 +354,6 @@ func _build_nightlife_exit_event(root: Node3D) -> void:
 	var p3 := Art.person(root, Color("2c3e50"))
 	p3.position = Vector3(1.2, 0.15, -0.6)
 
-	Art.label(root, Vector3(0, 2.3, 0), "NIGHTLIFE VENUE CLOSING CROWD", 14)
 
 
 func _get_player_district() -> String:
@@ -341,9 +363,9 @@ func _get_player_district() -> String:
 
 
 func _get_time_period() -> String:
-	if time_manager != null and "current_period" in time_manager:
-		return str(time_manager.get("current_period"))
-	return "midday"
+	if time_manager != null and "activity_period" in time_manager:
+		return str(time_manager.get("activity_period"))
+	return _activity_period
 
 
 func _is_raining() -> bool:
