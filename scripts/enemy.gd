@@ -79,10 +79,24 @@ func take_damage_at(
 	health = maxf(0,health-amount)
 	health_label.text = "GRUNT · %d" % health
 	GoreEffectsScript.spawn_hit_spray(get_parent(),impact_position,impact_intensity,shot_direction)
+	if impact_intensity >= 2.2 or amount >= 80.0:
+		# Heavy hits (e.g. shotgun blasts) tear extra blood and chunks loose.
+		GoreEffectsScript.spawn_hit_spray(get_parent(),impact_position,impact_intensity * 0.8,shot_direction)
 	if health <= 0:
 		player.kills += 1
-		get_parent().message = "GRUNT DOWN · +100 reputation"
-		GoreEffectsScript.spawn_death_splatter(get_parent(),global_position + Vector3.UP * 0.25,1.5)
+		var wanted := get_tree().get_first_node_in_group("wanted_system")
+		if wanted != null:
+			wanted.add_crime(14.0, "MURDER · police alerted")
+		if player.kills > 0 and player.kills % 30 == 0:
+			player.quad_jump_time = 10.0
+			get_parent().message = "30 KILLS · QUAD JUMP ACTIVE FOR 10 SECONDS!"
+		else:
+			get_parent().message = "GRUNT DOWN · +100 reputation"
+		var launch := shot_direction.normalized() * (4.0 + impact_intensity * 2.5)
+		launch.y = maxf(launch.y, 2.0 + impact_intensity * 0.8)
+		# Enemies explode into gibs for visceral, high-gore kills.
+		GoreEffectsScript.spawn_body_destruction(get_parent(), global_position + Vector3.UP * 0.2, launch, Color("c88c5a"), Color("4a2028"))
+		GoreEffectsScript.spawn_death_splatter(get_parent(),global_position + Vector3.UP * 0.25,1.8 + impact_intensity * 0.35)
 		visible = false
 		collision_layer = 0
 		collision_mask = 0

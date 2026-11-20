@@ -4,6 +4,7 @@ extends CharacterBody3D
 const WEAPON_PISTOL := 0
 const WEAPON_SHOTGUN := 1
 const WEAPON_SMG := 2
+const TRIP_SHADER := preload("res://shaders/petrol_trip.gdshader")
 
 var health: float = 100.0
 var ammo: int = 12
@@ -22,6 +23,7 @@ var spawn := Vector3(-9,1,15)
 var invulnerable: float = 0.0
 var kills: int = 0
 var bonus_reputation: int = 0
+var quad_jump_time: float = 0.0
 var stride: float = 0
 var coyote_time: float = 0
 var jump_buffer: float = 0
@@ -30,6 +32,13 @@ var aiming: bool = false
 var current_weapon: int = WEAPON_PISTOL
 var flashlight: SpotLight3D
 var flashlight_on: bool = false
+var damage_boost: float = 1.0
+var trip_time: float = 0.0
+var shoplift_total: int = 0
+var wanted_heat: int = 0
+var in_supermarket: Node = null
+var _trip_overlay: ColorRect
+var _trip_material: ShaderMaterial
 
 ## Tallest obstacle the controller climbs without jumping. The Opera House
 ## podium risers are 0.5 m, so 0.6 m clears them with margin while a 0.7 m curb
@@ -55,9 +64,12 @@ func _ready() -> void:
 	model.visible = false
 	floor_snap_length = GROUND_SNAP
 	add_to_group("player")
+	_build_trip_overlay()
 
 func _physics_process(dt: float) -> void:
+	quad_jump_time = maxf(0.0, quad_jump_time - dt)
 	invulnerable = maxf(0,invulnerable-dt)
+	_update_trip(dt)
 	fire_time = maxf(0,fire_time-dt)
 	melee_time = maxf(0,melee_time-dt)
 	weapon_switch_time = maxf(0.0,weapon_switch_time-dt)
@@ -87,16 +99,17 @@ func _physics_process(dt: float) -> void:
 	velocity.x = move_toward(velocity.x,direction.x*speed,accel*dt)
 	velocity.z = move_toward(velocity.z,direction.z*speed,accel*dt)
 	if is_on_floor():
-		air_jumps_left = 1
+		air_jumps_left = 3 if quad_jump_time > 0.0 else 1
 	coyote_time = 0.12 if is_on_floor() else maxf(0,coyote_time-dt)
 	jump_buffer = 0.12 if Input.is_action_just_pressed("jump") else maxf(0,jump_buffer-dt)
 	if jump_buffer > 0 and coyote_time > 0:
 		velocity.y = 9.4
 		jump_buffer = 0
 		coyote_time = 0
-	elif jump_buffer > 0 and air_jumps_left > 0:
+	elif jump_buffer > 0 and (air_jumps_left > 0 or quad_jump_time > 0.0):
 		velocity.y = 8.8
-		air_jumps_left -= 1
+		if quad_jump_time <= 0.0:
+			air_jumps_left -= 1
 		jump_buffer = 0
 	elif not is_on_floor():
 		velocity.y -= 26*dt
@@ -118,8 +131,64 @@ func _physics_process(dt: float) -> void:
 		model.rotation.y = lerp_angle(model.rotation.y,atan2(-direction.x,-direction.z),dt*12)
 	if Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		shoot()
+	if Input.is_action_just_pressed("sniff_petrol") and vehicle == null and in_supermarket == null:
+		for station: Node in get_tree().get_nodes_in_group("petrol_station"):
+			if global_position.distance_to((station as Node3D).global_position) < 8.0:
+				station.call("sniff", self)
+				break
 	if global_position.y < -10:
 		respawn()
+
+func _build_trip_overlay() -> void:
+	var layer := CanvasLayer.new()
+	layer.name = "PetrolTripLayer"
+	layer.layer = 0
+	add_child(layer)
+	_trip_overlay = ColorRect.new()
+	_trip_overlay.name = "PetrolTripOverlay"
+	_trip_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_trip_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trip_overlay.color = Color.WHITE
+	layer.add_child(_trip_overlay)
+	_trip_material = ShaderMaterial.new()
+	_trip_material.shader = TRIP_SHADER
+	_trip_material.set_shader_parameter("intensity", 0.0)
+	_trip_overlay.material = _trip_material
+	_trip_overlay.visible = false
+
+
+func sniff_petrol(duration: float = 18.0) -> void:
+	trip_time = maxf(trip_time, duration)
+	damage_boost = 1.35
+	if _trip_overlay != null:
+		_trip_overlay.visible = true
+		if _trip_material != null:
+			_trip_material.set_shader_parameter("intensity", 0.9)
+	if world != null:
+		world.message = "PETROL TRIP · +35%% DAMAGE · %ds · GET TO WORK" % int(trip_time)
+
+
+func _update_trip(dt: float) -> void:
+	if trip_time <= 0.0:
+		return
+	trip_time = maxf(0.0, trip_time - dt)
+	if _trip_overlay != null and _trip_material != null:
+		var fade_in := clampf((18.0 - trip_time) / 0.8, 0.0, 1.0)
+		var fade_out := clampf(trip_time / 2.0, 0.0, 1.0)
+		_trip_material.set_shader_parameter("intensity", minf(fade_in, fade_out) * 0.9)
+		_trip_overlay.visible = true
+	if trip_time <= 0.0:
+		damage_boost = 1.0
+		if _trip_overlay != null:
+			_trip_overlay.visible = false
+		if world != null:
+			world.message = "THE PETROL TRIP FADES · DAMAGE BACK TO NORMAL"
+
+
+func add_shoplift(value: int) -> void:
+	shoplift_total += maxi(0, value)
+	wanted_heat += 1
+
 
 ## Standard step assist: when the walk is stopped by a vertical face, lift by
 ## STEP_HEIGHT, retry the horizontal move, and drop back onto the surface. The
@@ -208,52 +277,92 @@ func shoot_shotgun() -> void:
 		reload()
 		return
 	shotgun_ammo -= 1
-	fire_time = 0.46
+	fire_time = 0.44
 	var camera: Camera3D = world.rig.camera
 	var muzzle: Vector3 = world.rig.muzzle_position()
 	var base_direction: Vector3 = -camera.global_basis.z
 	var pellet_hits: Dictionary = {}
-	for pellet_index in 9:
+	var pellet_count_total := 14
+	for pellet_index in pellet_count_total:
+		var spread_x := randf_range(-0.085, 0.085)
+		var spread_y := randf_range(-0.075, 0.075)
+		if pellet_index == 0:
+			spread_x *= 0.25
+			spread_y *= 0.25
 		var direction := (
 			base_direction
-			+ camera.global_basis.x * randf_range(-0.055,0.055)
-			+ camera.global_basis.y * randf_range(-0.055,0.055)
+			+ camera.global_basis.x * spread_x
+			+ camera.global_basis.y * spread_y
 		).normalized()
-		var query := PhysicsRayQueryParameters3D.create(
-			muzzle,muzzle + direction * 55.0,1,[get_rid()]
-		)
-		var hit := get_world_3d().direct_space_state.intersect_ray(query)
-		if hit.is_empty():
-			continue
-		var collider: Object = hit.collider
-		if collider.has_method("take_damage_at") or collider.has_method("take_damage"):
-			var id: int = collider.get_instance_id()
-			if not pellet_hits.has(id):
-				pellet_hits[id] = {
-					"target": collider,
-					"position": hit.position,
-					"count": 0,
-					"direction": direction
-				}
-			pellet_hits[id]["count"] += 1
-			pellet_hits[id]["position"] = hit.position
-		elif pellet_index == 0:
-			world.impact(hit.position,Color("d6b99b"),0.12)
-		if pellet_index in [0,4,8]:
-			world.tracer(muzzle,hit.position,Color("ffe1a6"))
+		var origin := muzzle
+		var remaining_range := 45.0
+		var exclude: Array = [get_rid()]
+		# Penetrating blast: pellets can tear through multiple bodies in a line,
+		# letting one shot blow apart several people at close range.
+		for penetration in 3:
+			if remaining_range <= 0.5:
+				break
+			var query := PhysicsRayQueryParameters3D.create(
+				origin, origin + direction * remaining_range, 1, exclude
+			)
+			var hit := get_world_3d().direct_space_state.intersect_ray(query)
+			if hit.is_empty():
+				break
+			var collider: Object = hit.collider
+			var hit_pos: Vector3 = hit.position
+			if collider.has_method("take_damage_at") or collider.has_method("take_damage"):
+				var id: int = collider.get_instance_id()
+				if not pellet_hits.has(id):
+					pellet_hits[id] = {
+						"target": collider,
+						"position": hit_pos,
+						"count": 0,
+						"direction": direction
+					}
+				pellet_hits[id]["count"] += 1
+				pellet_hits[id]["position"] = hit_pos
+				exclude.append(collider.get_rid())
+				# Push through bodies with reduced energy; stop on hard surfaces.
+				origin = hit_pos + direction * 0.35
+				remaining_range -= (hit_pos.distance_to(origin - direction * 0.35) + 0.35)
+				if penetration >= 1 and pellet_hits[id]["count"] >= 4:
+					break
+			else:
+				if pellet_index == 0:
+					world.impact(hit_pos, Color("d6b99b"), 0.14)
+				break
+		if pellet_index in [0, 4, 8, 13]:
+			var trace_end := muzzle + direction * 35.0
+			var trace_query := PhysicsRayQueryParameters3D.create(muzzle, trace_end, 1, [get_rid()])
+			var trace_hit := get_world_3d().direct_space_state.intersect_ray(trace_query)
+			if not trace_hit.is_empty():
+				trace_end = trace_hit.position
+			world.tracer(muzzle, trace_end, Color("ffe1a6"))
 	for result: Dictionary in pellet_hits.values():
-		var pellet_count: int = int(result["count"])
-		var damage := float(pellet_count) * 16.0
+		var target_pellets: int = int(result["count"])
+		var damage := float(target_pellets) * 22.0
+		if target_pellets >= 6:
+			damage += 35.0
+		if target_pellets >= 10:
+			damage += 40.0
 		_apply_weapon_hit(
-			result["target"],damage,result["position"],
-			1.2 + float(pellet_count) * 0.18,result["direction"]
+			result["target"], damage, result["position"],
+			1.8 + float(target_pellets) * 0.28, result["direction"]
 		)
-		world.hit_time = 0.18
-	world.rig.recoil = 0.075
+		# Extra close-range gore splatter for brutal impact feedback.
+		if target_pellets >= 4:
+			var GoreFx := preload("res://scripts/gore_effects.gd")
+			GoreFx.spawn_hit_spray(get_parent(), result["position"], 2.5 + float(target_pellets) * 0.25, result["direction"])
+			if target_pellets >= 6:
+				GoreFx.spawn_hit_spray(get_parent(), result["position"] + Vector3.UP * 0.15, 1.8 + float(target_pellets) * 0.15, result["direction"])
+			if target_pellets >= 8:
+				GoreFx.spawn_death_splatter(get_parent(), result["position"], 1.6 + float(target_pellets) * 0.1, false)
+		world.hit_time = 0.22
+	world.rig.recoil = 0.12
 	world.rig.show_muzzle_flash()
 	var audio := get_node_or_null("/root/AudioDirector")
 	if audio != null:
-		audio.play_impact("flesh" if not pellet_hits.is_empty() else "concrete",muzzle + base_direction * 2.0)
+		audio.play_impact("flesh" if not pellet_hits.is_empty() else "concrete", muzzle + base_direction * 2.0)
 	world.gunshot("shotgun")
 
 ## Compact SMG: fast automatic fire, low per-shot recoil, clear short-range
@@ -301,7 +410,10 @@ func _apply_weapon_hit(
 	impact_intensity: float,
 	shot_direction: Vector3
 ) -> void:
-	if target.has_method("take_damage_at"):
+	damage *= damage_boost
+	if target is ArcadeCar and target.has_method("take_weapon_damage"):
+		target.call("take_weapon_damage",damage)
+	elif target.has_method("take_damage_at"):
 		target.call("take_damage_at",damage,impact_position,impact_intensity,shot_direction)
 	elif target.has_method("take_damage"):
 		target.call("take_damage",damage)
