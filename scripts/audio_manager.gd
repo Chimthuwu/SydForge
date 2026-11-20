@@ -284,6 +284,65 @@ func play_impact(kind: String, world_position: Vector3) -> void:
 	voice.play()
 
 
+func play_thunder() -> void:
+	const SAMPLE_RATE := 22050
+	const DURATION := 2.2
+	var count := int(SAMPLE_RATE * DURATION)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var low := 0.0
+	for i in count:
+		var t := float(i) / SAMPLE_RATE
+		var env := exp(-t * 1.6) * (0.8 + 0.2 * sin(t * 12.0))
+		var noise := rng.randf_range(-1.0, 1.0)
+		low = lerpf(low, noise, 0.08) # Heavy low-pass
+		var rumble := (low * 0.75 + sin(TAU * 48.0 * t) * 0.25) * env
+		data.encode_s16(i * 2, int(clampf(rumble, -1.0, 1.0) * 32767.0))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = SAMPLE_RATE
+	stream.data = data
+	var player := AudioStreamPlayer.new()
+	player.bus = "Environment"
+	player.volume_db = -8.0
+	player.stream = stream
+	add_child(player)
+	player.finished.connect(player.queue_free)
+	player.play()
+
+
+func play_distant_siren(world_position: Vector3) -> void:
+	const SAMPLE_RATE := 22050
+	const DURATION := 2.4
+	var count := int(SAMPLE_RATE * DURATION)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	for i in count:
+		var t := float(i) / SAMPLE_RATE
+		var freq := 650.0 + sin(t * 4.0) * 220.0
+		var env := sin(t / DURATION * PI) # Fade in and out
+		var s := sin(TAU * freq * t) * env * 0.14
+		data.encode_s16(i * 2, int(clampf(s, -1.0, 1.0) * 32767.0))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = SAMPLE_RATE
+	stream.data = data
+	var voice := AudioStreamPlayer3D.new()
+	voice.bus = "Environment"
+	voice.volume_db = -28.0
+	voice.unit_size = 18.0
+	voice.max_distance = 120.0
+	voice.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+	voice.max_db = -12.0
+	voice.stream = stream
+	voice.global_position = world_position
+	add_child(voice)
+	voice.finished.connect(voice.queue_free)
+	voice.play()
+
+
 ## ---------------------------------------------------------------- settings --
 ## Master volume in dB, clamped to a hearing-safe range. Used by the HUD
 ## shortcut so the mix can be adjusted without editing project files.
