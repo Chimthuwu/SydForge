@@ -12,7 +12,7 @@ uniform float night_factor = 0.0;
 uniform float wetness = 0.0;
 uniform vec3 lit_color : source_color = vec3(1.0, 0.70, 0.38);
 uniform vec3 cool_lit_color : source_color = vec3(0.72, 0.84, 1.0);
-uniform float lit_chance = 0.16;
+uniform float lit_chance = 0.10;
 uniform sampler2D brick_texture : source_color, repeat_enable;
 uniform float brick_tile_m = 3.0;
 uniform float surface_detail = 1.0;
@@ -85,15 +85,15 @@ void fragment() {
 	// Weathering: restrained grain, dirt streaks and a darker base course.
 	float grain = hash21(floor(uv * vec2(2.4, 3.2)));
 	float streak = hash21(vec2(floor(uv.x * 1.7), 9.0));
-	vec3 base = wall * (0.86 + grain * 0.16);
-	base *= 1.0 - streak * 0.055;
-	base *= 0.92 + smoothstep(0.0, 1.2, uv.y) * 0.08;
-	base *= 0.94 + smoothstep(0.0, 1.0, fy) * 0.06;
+	vec3 base = wall * (0.74 + grain * 0.20);
+	base *= 1.0 - streak * 0.16;
+	base *= 0.58 + smoothstep(0.0, 3.6, uv.y) * 0.42;
+	base *= 0.92 + smoothstep(0.0, 1.0, fy) * 0.08;
 
 	// Surface scale: red-brick courses, sandstone ashlar, rendered terraces
 	// and concrete panels. The detail fades before it can alias at distance.
 	float view_distance = distance(world_position, CAMERA_POSITION_WORLD);
-	float detail_fade = (1.0 - smoothstep(90.0, 250.0, view_distance)) * surface_detail;
+	float detail_fade = (1.0 - smoothstep(140.0, 420.0, view_distance)) * surface_detail;
 	if (!roof && !glass_family && detail_fade > 0.001) {
 		vec3 textured = base;
 		if (family < 0.55) {
@@ -138,7 +138,7 @@ void fragment() {
 	bool lit = lit_roll > (1.0 - lit_chance);
 	vec3 lit_tint = mix(lit_color, cool_lit_color, step(0.86, lit_roll));
 	// Most occupied rooms read as a warm interior, not a white neon square.
-	float glow = lit ? (0.16 + hash21(vec2(cell, row + 13.0)) * 0.24) : 0.02;
+	float glow = lit ? (0.10 + hash21(vec2(cell, row + 13.0)) * 0.18) : 0.015;
 
 	vec3 color = mix(base, glass, window_glass);
 	color = mix(color, base * 1.06 + vec3(0.02), frame * (1.0 - window_glass) * 0.85);
@@ -147,14 +147,16 @@ void fragment() {
 
 	float wet_f = clamp(wetness, 0.0, 1.0);
 	color = mix(color, color * 0.76, wet_f * 0.65);
-	ALBEDO = color;
+	// At night the masonry drops back so lit windows and neon signage carry
+	// the scene. Glow-only lighting on bright walls washed the skyline out.
+	ALBEDO = color * mix(1.0, 0.55, clamp(night_factor, 0.0, 1.0));
 	AO = wall_ao;
-	ROUGHNESS = mix(mix(0.92, 0.16, window_glass), 0.18, wet_f * 0.6);
-	METALLIC = mix(0.0, 0.42, window_glass);
+	ROUGHNESS = mix(mix(0.96, 0.28, window_glass), 0.18, wet_f * 0.6);
+	METALLIC = mix(0.0, 0.24, window_glass);
 	SPECULAR = mix(mix(0.25, 0.6, window_glass), 0.8, wet_f * 0.7);
 
 	float emission_strength = night_factor * window_glass * glow;
 	// Shopfronts stay brighter than offices but below a blown-out glow.
 	emission_strength *= mix(1.0, 1.35, shop);
-	EMISSION = lit_tint * emission_strength * 0.62;
+	EMISSION = lit_tint * emission_strength * 0.42;
 }

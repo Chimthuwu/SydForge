@@ -4,9 +4,9 @@ render_mode diffuse_burley, specular_schlick_ggx;
 // Coarse, weathered asphalt / concrete. Breaks up the flat single-colour road
 // ribbons with aggregate noise, patches and subtle damp variation.
 
-uniform vec3 base_color : source_color = vec3(0.115, 0.125, 0.135);
-uniform float roughness_base = 0.86;
-uniform float patch_strength = 0.18;
+uniform vec3 base_color : source_color = vec3(0.088, 0.096, 0.104);
+uniform float roughness_base = 0.92;
+uniform float patch_strength = 0.28;
 uniform float wetness = 0.0;
 
 varying vec3 world_position;
@@ -26,8 +26,8 @@ void fragment() {
 	float fine = hash21(floor(world_position.xz * 22.0));
 	float patch = hash21(floor(world_position.xz * 0.09));
 	vec3 color = base_color;
-	color *= 0.82 + aggregate * 0.26;
-	color *= 1.0 - fine * 0.05;
+	color *= 0.72 + aggregate * 0.34;
+	color *= 1.0 - fine * 0.10;
 	color *= mix(1.0 - patch_strength, 1.0 + patch_strength, patch);
 	color *= 0.95 + smoothstep(-2.0, 40.0, world_position.y) * 0.05;
 	// Wet road response: darkened surface, water pooling in micro-depressions

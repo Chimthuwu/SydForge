@@ -332,6 +332,25 @@ func _build_props() -> void:
 		left_lower_arm.add_child(_cup)
 		_cyl(_cup, Vector3(0.0, -0.27, -0.05), 0.03, 0.08, Color("efe7dc"))
 
+	# Subtle near-future accessories — ordinary people, not robots. Headphones
+	# for commuters/young adults, a small lit bag strap for nightlife crowds.
+	if _archetype in ["commuter", "student", "young_adult", "office"] and randf() < 0.35 and head_node != null:
+		_cyl(head_node, Vector3(-0.125, 0.0, 0.0), 0.035, 0.02, Color("1a1d22"))
+		_cyl(head_node, Vector3(0.125, 0.0, 0.0), 0.035, 0.02, Color("1a1d22"))
+		_box(head_node, Vector3(0.0, 0.11, 0.0), Vector3(0.25, 0.025, 0.05), Color("1a1d22"))
+	if _archetype in ["nightlife", "street_group"] and _bag != null and randf() < 0.5:
+		var led := MeshInstance3D.new()
+		var led_shape := BoxMesh.new()
+		led_shape.size = Vector3(0.02, 0.30, 0.02)
+		led.mesh = led_shape
+		var led_mat := StandardMaterial3D.new()
+		led_mat.emission_enabled = true
+		led_mat.emission = Color("19e6ff")
+		led_mat.emission_energy_multiplier = 0.8
+		led.material_override = led_mat
+		_bag.add_child(led)
+		led.position = Vector3(0.12, 0.18, 0.1)
+
 
 func _box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
 	var mesh := MeshInstance3D.new()

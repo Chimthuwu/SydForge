@@ -87,6 +87,16 @@ const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 const BRICK_TEXTURE := preload("res://sydney/architecture/megakit/T_RedBrick_BaseColor.png")
 const CbdRailNetwork := preload("res://sydney/cbd/cbd_rail_network.gd")
 const StationInteriorsScript := preload("res://sydney/railway/station_interiors.gd")
+## Cyberpunk visual-direction vertical slice (presentation only, no gameplay change).
+const NeonSliceScript := preload("res://sydney/cbd/cbd_neon_slice.gd")
+## City-wide extension of the neon system: district signage, skyline, landmarks.
+const NeonCityScript := preload("res://sydney/cbd/cbd_neon_city.gd")
+## Authored architectural skyline landmarks (facade panels + distinctive crowns).
+const SkylineHeroesScript := preload("res://sydney/cbd/cbd_skyline_heroes.gd")
+## Designed district anchor installations for underdressed areas.
+const DistrictAnchorsScript := preload("res://sydney/cbd/cbd_district_anchors.gd")
+## Representative CBD architectural rebuild (vertical slice, acceptance gate).
+const ArchSliceScript := preload("res://sydney/cbd/cbd_arch_slice.gd")
 
 var district_centres: Dictionary = {}
 var viewpoints: Dictionary = {}
@@ -149,6 +159,52 @@ func _build() -> void:
 		railway.free()
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
 	build_times_ms["SydneyRailNetwork"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	# Cyberpunk vertical slice: George Street CBD + Wynyard underground.
+	start = Time.get_ticks_usec()
+	var neon_slice := NeonSliceScript.new()
+	neon_slice.build(data)
+	add_child(neon_slice)
+	geometry_counts["NeonVerticalSlice"] = neon_slice.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["NeonVerticalSlice"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	start = Time.get_ticks_usec()
+	var neon_city := NeonCityScript.new()
+	neon_city.build(data, get_node_or_null("HarbourBridge"))
+	add_child(neon_city)
+	geometry_counts["NeonCity"] = neon_city.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["NeonCity"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	start = Time.get_ticks_usec()
+	var skyline_heroes := SkylineHeroesScript.new()
+	skyline_heroes.build(data)
+	add_child(skyline_heroes)
+	geometry_counts["SkylineHeroes"] = skyline_heroes.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["SkylineHeroes"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	start = Time.get_ticks_usec()
+	var anchors := DistrictAnchorsScript.new()
+	anchors.build()
+	add_child(anchors)
+	geometry_counts["DistrictAnchors"] = anchors.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["DistrictAnchors"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	start = Time.get_ticks_usec()
+	var arch_slice := ArchSliceScript.new()
+	arch_slice.build(data)
+	add_child(arch_slice)
+	geometry_counts["ArchitectureSlice"] = arch_slice.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["ArchitectureSlice"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 
 
@@ -296,7 +352,7 @@ func _build_ground() -> void:
 		collider.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.5, rect.position.y + rect.size.y * 0.5)
 		body.add_child(collider)
 
-	var mat := SydneyMesh.mat(Color("6c7060"))
+	var mat := SydneyMesh.mat(Color("53574e"))
 	for i in cells.size():
 		var rect: Rect2 = cells[i]
 		var instance := MeshInstance3D.new()
@@ -359,13 +415,13 @@ func _build_roads() -> void:
 	super()
 	var roads := get_node_or_null("Roads") as MeshInstance3D
 	if roads != null:
-		roads.material_override = _asphalt_material(Color("33383d"), 0.82)
+		roads.material_override = _asphalt_material(Color("2a2e32"), 0.91)
 	# Footpaths and crossings read as concrete, not the same flat strip as the
 	# carriageway. The same shader with lighter, rougher values is enough.
 	for node_name in ["Footpaths", "Crossings", "Parking"]:
 		var surface := get_node_or_null(node_name) as MeshInstance3D
 		if surface != null:
-			surface.material_override = _asphalt_material(Color("7a786f"), 0.94)
+			surface.material_override = _asphalt_material(Color("66645c"), 0.95)
 
 
 func _clears_town_hall_forecourt(row: Dictionary) -> bool:

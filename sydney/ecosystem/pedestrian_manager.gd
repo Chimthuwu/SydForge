@@ -4,7 +4,7 @@ extends Node3D
 ## Spawns, manages, and culls pedestrians around the player using the Sydney pedestrian graph.
 ## Creates a diverse, district-aware population with lightweight routines and activities.
 
-@export var max_active_pedestrians: int = 70
+@export var max_active_pedestrians: int = 45
 @export var spawn_radius: float = 130.0
 @export var despawn_radius: float = 170.0
 

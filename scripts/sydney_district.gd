@@ -54,8 +54,8 @@ func build_environment() -> void:
 			continue
 		var env := world_env.environment
 		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-		env.tonemap_exposure = 1.02
-		env.tonemap_white = 1.08
+		env.tonemap_exposure = 0.94
+		env.tonemap_white = 1.04
 		env.ambient_light_energy = 0.5
 		env.ambient_light_color = Color("d7e6f2")
 		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
@@ -72,9 +72,9 @@ func build_environment() -> void:
 		env.fog_aerial_perspective = 0.3
 		env.fog_sky_affect = 0.12
 		env.glow_enabled = true
-		env.glow_intensity = 0.35
-		env.glow_strength = 0.9
-		env.glow_bloom = 0.04
+		env.glow_intensity = 0.22
+		env.glow_strength = 0.7
+		env.glow_bloom = 0.02
 		env.ssao_enabled = false
 		env.ssr_enabled = false
 	for node in find_children("*", "DirectionalLight3D", true, false):

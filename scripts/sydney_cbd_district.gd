@@ -80,7 +80,9 @@ func build_environment() -> void:
 			environment.fog_sky_affect = 0.15
 	for node in find_children("*", "DirectionalLight3D", true, false):
 		var sun := node as DirectionalLight3D
-		sun.directional_shadow_max_distance = 320.0
+		# 320 m of shadows over ~2,000 casters doubled the draw-call count for
+		# very little visible gain in this dense, mostly night-time city.
+		sun.directional_shadow_max_distance = 150.0
 		sun.shadow_bias = 0.04
 
 

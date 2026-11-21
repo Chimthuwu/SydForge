@@ -58,6 +58,7 @@ func build(world_data: Dictionary, harbour_bridge: Node3D) -> bool:
 	_index_station_route_positions()
 	_build_track_meshes()
 	_build_tunnel_enclosures()
+	_build_descent_cutting()
 	_build_stations(world_data)
 	stats = {
 		"stations": station_nodes.size(),
@@ -317,15 +318,23 @@ func _distance_fraction(start_index: int, end_index: int, current_index: int) ->
 func _set_route_elevation(start_index: int, end_index: int, start_y: float, end_y: float) -> void:
 	if start_index < 0 or end_index >= main_route_points.size() or end_index < start_index:
 		return
+	# Snapshot every segment length BEFORE changing any y. The old loop measured
+	# the next segment after mutating the current point, so vertical drop leaked
+	# into `travelled` and the interpolation overshot its endpoint by 2-4 m
+	# (the dip visible on the approach to Wynyard).
+	var lengths := PackedFloat32Array()
+	lengths.resize(maxi(0, end_index - start_index))
 	var total := 0.0
 	for index in range(start_index, end_index):
-		total += main_route_points[index].distance_to(main_route_points[index + 1])
+		var length := main_route_points[index].distance_to(main_route_points[index + 1])
+		lengths[index - start_index] = length
+		total += length
 	var travelled := 0.0
 	for index in range(start_index, end_index + 1):
 		var t := 0.0 if total <= 0.001 else travelled / total
 		main_route_points[index].y = lerpf(start_y, end_y, t)
 		if index < end_index:
-			travelled += main_route_points[index].distance_to(main_route_points[index + 1])
+			travelled += lengths[index - start_index]
 
 
 func _index_station_route_positions() -> void:
@@ -481,9 +490,11 @@ func _build_southern_bridge_portal() -> void:
 	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
 	var portal_index := _bridge_range.y
 	if wynyard_idx > _bridge_range.y:
-		# A low-grade entry marker at the start of the dive, not a six-metre
-		# gateway planted on the carriageway further down the descent.
-		portal_index = clampi(_bridge_range.y + 6, _bridge_range.y + 1, wynyard_idx - 1)
+		# Put the mouth where the track actually starts diving (see
+		# _apply_station_elevations: descent_start -> portal_index -> bore). The
+		# old +6 marker sat well behind the dive, so the train appeared to drive
+		# into bare ground with no portal in sight.
+		portal_index = clampi(_bridge_range.y + 22, _bridge_range.y + 1, wynyard_idx - 1)
 	var position := main_route_points[portal_index]
 	var forward := _route_direction(portal_index)
 	var portal := Node3D.new()
@@ -558,7 +569,11 @@ func _build_station_shell(
 		interior, Vector3(0.0, 0.12, 0.0),
 		Vector3(8.0, 0.24, platform_length), Color("72716b"), true
 	)
-	_build_station_access(parent, station, interior, platform_y, below_ground)
+	# The old 22-step "access" was a vertical stack at the station centre:
+	# surface_x/surface_z were always zero, so it punched through the ticket
+	# gates and ended in mid-air. StationInteriors now supplies real stairs
+	# aligned to the dressed platform, so this stack is no longer built.
+	# _build_station_access(parent, station, interior, platform_y, below_ground)
 	for side in [-1.0, 1.0]:
 		ART.box(
 			interior, Vector3(side * 3.0, 0.08, 0.0),
@@ -579,6 +594,14 @@ func _build_station_shell(
 					interior, Vector3(side * 5.0, 2.0, float(column_z)),
 					Vector3(0.45, 4.0, 0.45), Color("9a978c")
 				)
+		# Platform side walls. The old below-ground shell had only a roof and
+		# columns, so the platform read as an open trench with harbour daylight
+		# bleeding in from either side.
+		for side in [-1.0, 1.0]:
+			ART.box(
+				interior, Vector3(side * 5.45, 2.0, 0.0),
+				Vector3(0.5, 4.0, platform_length + 8.0), Color("47443f")
+			)
 		ART.label(interior, Vector3(0.0, 2.1, -platform_length * 0.5 + 4.0),
 			str(station.get("name", "")).to_upper(), 36)
 	else:
@@ -725,7 +748,7 @@ func _is_tunnel_segment(segment_index: int) -> bool:
 	# authored station volumes and access points remain usable.
 	for station_id in station_route_indices.keys():
 		var idx := int(station_route_indices[station_id])
-		if absi(segment_index - idx) <= 10:
+		if absi(segment_index - idx) <= 5:
 			return false
 
 	# Southern bridge descent: only enclose once the whole bore roof is below
@@ -819,6 +842,41 @@ func _build_tunnel_enclosures() -> void:
 	_commit_mesh("RailTunnelCeiling", ceiling_surface, Color("3f3d39"), 0.96)
 	_commit_mesh("RailTunnelDetails", detail_surface, Color("5a5750"), 0.9)
 	_setup_tunnel_lights()
+
+
+## Open cut between the southern bridge approach and the first deep bore.
+## The matching ground opening is emitted by StationInteriors.openings().
+func _build_descent_cutting() -> void:
+	if main_route_points.size() < 335:
+		return
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var first := 258
+	var last := mini(330, main_route_points.size() - 2)
+	for i in range(first, last):
+		var a := main_route_points[i]
+		var b := main_route_points[i + 1]
+		var direction := b - a
+		direction.y = 0.0
+		var length := direction.length()
+		if length < 0.1:
+			continue
+		direction /= length
+		var basis := _track_basis(direction)
+		var mid := (a + b) * 0.5
+		var track_y := (a.y + b.y) * 0.5
+		var top := 0.45
+		var bottom := track_y - 0.7
+		var height := top - bottom
+		if height < 0.25:
+			continue
+		var center_y := (top + bottom) * 0.5
+		for side in [-1.0, 1.0]:
+			var wall_pos: Vector3 = mid + basis.x * (float(side) * 6.4) + Vector3.UP * center_y
+			_emit_box(surface, wall_pos, basis, Vector3(0.7, height, length + 0.06), Vector3.UP)
+		var floor_pos := mid + Vector3.UP * (track_y - 0.42)
+		_emit_box(surface, floor_pos, basis, Vector3(13.2, 0.3, length + 0.06), Vector3.UP)
+	_commit_mesh("RailDescentCutting", surface, Color("5a5750"), 0.97)
 
 
 func _add_collision_box(parent: StaticBody3D, center: Vector3, basis: Basis, size: Vector3) -> void:

@@ -213,9 +213,9 @@ func _apply_lighting(delta: float, force: bool = false) -> void:
 			# Morning to midday
 			var t := (current_time_hours - 7.5) / 7.5
 			light_col = Color("fff5e0").lerp(Color("ffffff"), t)
-			light_energy = lerpf(0.9, 1.15, sin(t * PI * 0.5))
-			ambient_col = Color("cfe0ea")
-			ambient_energy = 0.65
+			light_energy = lerpf(0.82, 1.00, sin(t * PI * 0.5))
+			ambient_col = Color("c2d0db")
+			ambient_energy = 0.55
 			sky_top = Color("388ebd")
 			sky_horizon = Color("bde4e0")
 		elif current_time_hours < 17.5:

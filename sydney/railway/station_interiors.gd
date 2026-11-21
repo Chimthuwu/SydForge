@@ -112,6 +112,13 @@ static func openings() -> Array:
 		var cw: float = float(spec.get("concourse", Vector2(24, 14)).x) + 4.0
 		var ch: float = float(spec.get("concourse", Vector2(24, 14)).y) + 10.0
 		result.append({"id": spec["id"], "x": cx, "z": cz, "w": cw, "h": ch})
+	# The southern bridge descent is an open cut before it becomes a bore.
+	# Without this opening the train is rendered inside an unbroken ground slab
+	# for ~250 m. Bounds follow the authored route points 258..330.
+	result.append({
+		"id": "bridge_descent_cut", "x": -237.0, "z": -1135.0,
+		"w": 64.0, "h": 410.0,
+	})
 	return result
 
 
@@ -130,16 +137,26 @@ func _build_station(spec: Dictionary, railway: Node3D, world_data: Dictionary) -
 	station.position = Vector3(float(spec["x"]), 0.0, float(spec["z"]))
 	add_child(station)
 
+	# The railway platform is built at the nearest track waypoint, which for
+	# Wynyard is ~15 m west of the OSM station node. Dress the platform at the
+	# track, not at the concourse centre, or the two platform volumes overlap.
+	var rail_anchor: Vector3 = Vector3(float(spec["x"]), 0.0, float(spec["z"]))
+	if railway != null and railway.has_method("get_station_route_index"):
+		var route_index := int(railway.call("get_station_route_index", str(spec["id"])))
+		var route: Array = railway.get("main_route_points")
+		if route_index >= 0 and route_index < route.size():
+			rail_anchor = route[route_index]
+
 	var kind := str(spec.get("kind", "surface"))
 	if kind == "underground":
-		_build_underground_station(station, spec)
+		_build_underground_station(station, spec, rail_anchor)
 	elif kind == "elevated":
 		_build_surface_station(station, spec, float(spec.get("elevation", 12.0)))
 	else:
 		_build_surface_station(station, spec, 0.25)
 
 
-func _build_underground_station(root: Node3D, spec: Dictionary) -> void:
+func _build_underground_station(root: Node3D, spec: Dictionary, rail_anchor: Vector3) -> void:
 	var depth := float(spec.get("depth", 10.0))
 	var platform_y := -depth
 	var conc_y := -depth * 0.55
@@ -157,6 +174,16 @@ func _build_underground_station(root: Node3D, spec: Dictionary) -> void:
 	var shaft_len := conc_size.y * 0.5 + 6.0
 	_stairs(root, Vector3(0.0, conc_y + 0.1, conc_size.y * 0.5 + shaft_len * 0.5), 3.2, rise, shaft_len, 0.0)
 	_stairs(root, Vector3(0.0, conc_y + 0.1, -conc_size.y * 0.5 - shaft_len * 0.5), 3.2, rise, shaft_len, PI)
+	# Roof the street shaft either side of the stair opening. Without this the
+	# platform view looks out through a long unlined slot into daylight.
+	for z_sign in [-1.0, 1.0]:
+		var shaft_z: float = z_sign * (conc_size.y * 0.5 + shaft_len * 0.5)
+		for x_sign in [-1.0, 1.0]:
+			ART.box(
+				root,
+				Vector3(float(x_sign) * (conc_size.x * 0.25 + 1.0), -0.35, shaft_z),
+				Vector3(maxf(1.0, conc_size.x * 0.5 - 2.0), 0.3, shaft_len), CONCRETE
+			)
 
 	# Stairs down from concourse to platform level.
 	var down_rise := conc_y - platform_y
@@ -166,7 +193,11 @@ func _build_underground_station(root: Node3D, spec: Dictionary) -> void:
 	# Platform volume and dressing (visual, sits around/over rail shell).
 	var platform := Node3D.new()
 	platform.name = "PlatformInterior"
-	platform.position = Vector3(0.0, platform_y, 0.0)
+	platform.position = Vector3(
+		rail_anchor.x - root.position.x,
+		rail_anchor.y - root.position.y,
+		rail_anchor.z - root.position.z
+	)
 	root.add_child(platform)
 	_platform_dressing(platform, length, float(spec.get("width", 14.0)), str(spec.get("name", "")), true)
 
@@ -305,7 +336,19 @@ func _stairs(parent: Node3D, start: Vector3, width: float, rise: float, run: flo
 		var y := float(i) * step_h + step_h * 0.5
 		var z := -run * 0.5 + float(i) * step_d + step_d * 0.5
 		ART.box(root, Vector3(0.0, y, z), Vector3(width, step_h, step_d + 0.02), CONCRETE, true)
-	# Handrails.
+	# Slim inclined handrails. The old solid slab was `rise + 1` metres tall,
+	# which read as an enormous blue wedge from the platform instead of a rail.
 	for side in [-1.0, 1.0]:
-		ART.box(root, Vector3(side * (width * 0.5 - 0.08), rise * 0.5 + 0.5, 0.0), Vector3(0.08, rise + 1.0, run), METAL)
-		ART.box(root, Vector3(side * (width * 0.5 - 0.08), rise + 0.95, 0.0), Vector3(0.1, 0.08, run), METAL)
+		var rail := ART.box(
+			root,
+			Vector3(side * (width * 0.5 - 0.08), rise * 0.5 + 0.95, 0.0),
+			Vector3(0.09, 0.1, run + 0.2), METAL
+		)
+		rail.rotation.x = -atan2(rise, maxf(run, 0.1))
+		for post in 4:
+			var t := float(post) / 3.0
+			ART.box(
+				root,
+				Vector3(side * (width * 0.5 - 0.08), t * rise + 0.5, -run * 0.5 + t * run),
+				Vector3(0.08, 1.0, 0.08), METAL
+			)

@@ -342,6 +342,10 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 			_add_standard_lights(body_art, half_w * 0.78, wr + 0.4, half_l, headlights, taillights)
 			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
 
+	# Near-future retrofit detail: restrained LED accents on modernised everyday
+	# vehicles. No silhouette or physics changes; shared emissive materials only.
+	_add_future_accents(body_art, vclass, L, W, wr, half_l)
+
 	return {
 		"body_art": body_art,
 		"wheels": wheels,
@@ -351,6 +355,51 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 		"emergency_light_nodes": emergency_light_nodes,
 		"specs": spec
 	}
+
+static var _accent_materials: Dictionary = {}
+
+static func _accent_mat(color: Color) -> StandardMaterial3D:
+	var key := color.to_html(false)
+	if _accent_materials.has(key):
+		return _accent_materials[key]
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 1.4
+	_accent_materials[key] = mat
+	return mat
+
+
+static func _accent_box(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
+	var mesh := MeshInstance3D.new()
+	var shape := BoxMesh.new()
+	shape.size = size
+	mesh.mesh = shape
+	mesh.material_override = _accent_mat(color)
+	parent.add_child(mesh)
+	mesh.position = pos
+
+
+static func _add_future_accents(parent: Node3D, vclass: int, length_m: float, width_m: float, wheel_r: float, half_len: float) -> void:
+	var accent := Color("19e6ff")
+	match vclass:
+		VehicleClass.TAXI, VehicleClass.DELIVERY_VAN:
+			accent = Color("ffae32")
+		VehicleClass.POLICE:
+			accent = Color("3a7bff")
+		VehicleClass.SPORTS:
+			accent = Color("ff2e88")
+		VehicleClass.BUS:
+			accent = Color("38ffc8")
+		_:
+			return
+	for side in [-1.0, 1.0]:
+		_accent_box(parent, Vector3(side * (width_m * 0.5 + 0.01), wheel_r + 0.18, 0.0),
+			Vector3(0.05, 0.05, length_m * 0.7), accent)
+	_accent_box(parent, Vector3(0.0, wheel_r + 0.48, -half_len - 0.02),
+		Vector3(width_m * 0.55, 0.045, 0.04), accent)
+
 
 static func _build_emergency_lightbar(parent: Node3D, pos: Vector3, width: float, out_meshes: Array[MeshInstance3D], out_lights: Array[OmniLight3D], is_police_ambulance: bool) -> void:
 	# Base aerodynamic bar

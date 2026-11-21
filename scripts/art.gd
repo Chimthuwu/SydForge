@@ -64,7 +64,9 @@ static func label(parent: Node3D, pos: Vector3, words: String, size: int = 64) -
 	text.text = words
 	text.font_size = size
 	text.pixel_size = 0.018
-	text.outline_size = 8
+	# Outlined Label3D adds a transparent pass per sign; with dozens of venue
+	# signs this was a measurable Compatibility-renderer cost.
+	text.outline_size = 0
 	parent.add_child(text)
 	text.position = pos
 	return text

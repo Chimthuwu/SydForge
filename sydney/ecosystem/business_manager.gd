@@ -171,6 +171,7 @@ var _seated_npc_nodes: Array[Node3D] = []
 var _patrons: Array[Node3D] = []
 var _patron_timer: float = 0.0
 var _peds_manager: Node = null
+var _last_occupancy_hour: float = -99.0
 
 
 func _ready() -> void:
@@ -242,7 +243,11 @@ func _connect_time_manager() -> void:
 
 func _on_time_changed(hours: float, _formatted: String) -> void:
 	current_time_hours = hours
-	_update_venue_occupancy()
+	# time_changed fires every frame, but open/closed visibility can only change
+	# at a schedule boundary. Re-walking 17 venue trees at 60 Hz was pure waste.
+	if absf(hours - _last_occupancy_hour) >= 0.25:
+		_last_occupancy_hour = hours
+		_update_venue_occupancy()
 
 
 func is_venue_open(venue: Dictionary) -> bool:

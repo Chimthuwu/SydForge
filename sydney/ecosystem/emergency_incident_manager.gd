@@ -66,13 +66,40 @@ func set_patrol_intensity(value: float) -> void:
 	_patrol_intensity = clampf(value, 0.0, 1.0)
 
 
+## Foot patrols use the real PedestrianController so they have a collider,
+## health, damage/death handling and the wanted-crime consequence. The old
+## Art.person decorations could be shot straight through.
+func _make_officer(position: Vector3, officer_name: String) -> Node3D:
+	var cop := PedestrianController.new()
+	cop.name = officer_name
+	add_child(cop)
+	cop.configure({
+		"archetype": "police",
+		"outfit": "police",
+		"district": "sydney",
+		"skin": Color("d9a079"),
+		"hair": Color("1b1410"),
+		"height": 1.78,
+		"activity": PedestrianController.Activity.STAND,
+		"activity_time": 60.0,
+	})
+	cop.global_position = position
+	cop.add_to_group("police_foot_patrol")
+	cop.set_meta("officer_ttl", 150.0)
+	return cop
+
+
 func _spawn_foot_officers_near(position: Vector3, count: int) -> void:
-	for i in count:
-		var cop := Art.person(self, Color("152238"))
-		cop.name = "RespondingOfficer"
-		cop.position = position + Vector3(1.8 + i * 0.8, 0.2, -1.4 - i * 0.5)
-		cop.add_to_group("police_foot_patrol")
-		Art.box(cop, Vector3(0, 1.68, 0), Vector3(0.28, 0.12, 0.28), Color("101820"))
+	# Hard cap and TTL keep a long crime-heavy session from accumulating
+	# decorative officers (and their meshes) without cleanup.
+	var live := 0
+	for officer in foot_patrol_officers:
+		if is_instance_valid(officer):
+			live += 1
+	for i in mini(count, maxi(0, 8 - live)):
+		var cop := _make_officer(
+			position + Vector3(1.8 + i * 0.8, 0.2, -1.4 - i * 0.5), "RespondingOfficer"
+		)
 		foot_patrol_officers.append(cop)
 
 
@@ -240,15 +267,21 @@ func _build_police_incident(root: Node3D) -> void:
 	# Flashing roof lightbar
 	_add_flashing_emergency_lights(root, Vector3(0, 1.5, 0), true)
 
-	# Two police officers questioning a pedestrian
-	var cop1 := Art.person(root, Color("1a2530"))
-	cop1.position = Vector3(2.2, 0.15, -0.8)
-	cop1.rotation.y = PI * 0.4
-	Art.box(cop1, Vector3(0, 1.68, 0), Vector3(0.28, 0.12, 0.28), Color("101820")) # Police cap
-	
-	var cop2 := Art.person(root, Color("1a2530"))
-	cop2.position = Vector3(2.6, 0.15, 0.6)
-	cop2.rotation.y = PI * 0.2
+	# Two real, shootable officers questioning a pedestrian
+	for i in 2:
+		var cop := PedestrianController.new()
+		cop.name = "RespondingOfficer"
+		root.add_child(cop)
+		cop.configure({
+			"archetype": "police", "outfit": "police", "district": "sydney",
+			"skin": Color("d9a079"), "activity": PedestrianController.Activity.STAND,
+			"activity_time": 60.0,
+		})
+		cop.position = Vector3(2.2 + i * 0.4, 0.15, -0.8 + i * 1.4)
+		cop.rotation.y = PI * 0.4 - i * PI * 0.2
+		cop.add_to_group("police_foot_patrol")
+		cop.set_meta("officer_ttl", 120.0)
+		foot_patrol_officers.append(cop)
 	
 	var citizen := Art.person(root, Color("e67e22"))
 	citizen.position = Vector3(3.4, 0.15, 0.0)
@@ -363,17 +396,26 @@ func _spawn_police_foot_patrols() -> void:
 			count = 2
 		for j in count:
 			var offset := Vector3(-0.6, 0, 0) if j == 0 else Vector3(0.6, 0, 0)
-			var cop := Art.person(self, Color("152238"))
-			cop.position = spot + offset
-			cop.add_to_group("police_foot_patrol")
-			Art.box(cop, Vector3(0, 1.68, 0), Vector3(0.28, 0.12, 0.28), Color("101820"))
-			# Police radio and duty belt
-			Art.box(cop, Vector3(0.18, 1.1, -0.1), Vector3(0.08, 0.16, 0.06), Color("050505"))
-			foot_patrol_officers.append(cop)
+			foot_patrol_officers.append(_make_officer(spot + offset, "PatrolOfficer"))
 
 
 func _update_foot_patrols() -> void:
-	# Subtle patrol patrol pace / sway
+	# Drop dead/expired officers so long sessions do not accumulate nodes.
+	var i := foot_patrol_officers.size() - 1
+	while i >= 0:
+		var officer = foot_patrol_officers[i]
+		if not is_instance_valid(officer) or officer.get("is_dead") == true:
+			foot_patrol_officers.remove_at(i)
+			if is_instance_valid(officer):
+				officer.queue_free()
+		elif officer.name == "RespondingOfficer":
+			var ttl := float(officer.get_meta("officer_ttl", 0.0)) - 2.0
+			officer.set_meta("officer_ttl", ttl)
+			if ttl <= 0.0:
+				officer.queue_free()
+				foot_patrol_officers.remove_at(i)
+		i -= 1
+	# Subtle patrol pace / sway
 	for cop in foot_patrol_officers:
 		if is_instance_valid(cop):
 			cop.rotate_y(randf_range(-0.15, 0.15))

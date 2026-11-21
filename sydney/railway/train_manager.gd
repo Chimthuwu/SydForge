@@ -16,6 +16,12 @@ var _player_ref: Node3D
 var _railway: Node3D
 var _route: Array[Vector3] = []
 var _station_stops: Array[Dictionary] = []
+## Derived from the imported model's real bounds. The old fixed +0.9 lift put
+## the wheels ~1.26 m below the rail head, so trains visibly sank into the
+## bridge deck and the ground. Nothing about this is an arbitrary visual offset.
+var _car_half_height: float = 2.158
+var _rail_head_cbd: float = 0.155
+var _rail_head_bridge: float = 0.24
 
 
 func setup(railway: Node3D, player: Node3D) -> void:
@@ -28,6 +34,10 @@ func setup(railway: Node3D, player: Node3D) -> void:
 	if _route.size() < 4:
 		push_warning("TrainManager: rail route is too short")
 		return
+	if KSET_MESH != null:
+		var aabb: AABB = KSET_MESH.get_aabb()
+		var scale := 20.3 / maxf(aabb.size.z, 0.001)
+		_car_half_height = aabb.size.y * scale * 0.5
 	_build_station_stops()
 	_spawn_trains()
 	stats = {
@@ -119,7 +129,7 @@ func _make_car() -> Node3D:
 		mat.emission = Color("fff0c4")
 		mat.emission_energy_multiplier = 2.0
 		lamp.material_override = mat
-		lamp.position = Vector3(side * 0.7, 1.6, -10.0)
+		lamp.position = Vector3(side * 0.7, _car_half_height - 0.5, -10.0)
 		root.add_child(lamp)
 	return root
 
@@ -214,6 +224,12 @@ func _update_consist(train: Dictionary, immediate: bool) -> void:
 		ahead.y = 0.0
 		if ahead.length_squared() < 0.001:
 			ahead = Vector3.FORWARD
+		var rail_head := _rail_head_cbd
+		var bridge_range: Variant = _railway.get("_bridge_range") if _railway != null else null
+		if bridge_range is Vector2i and (bridge_range as Vector2i).x >= 0:
+			var span: Vector2i = bridge_range
+			if i0 >= span.x and i0 <= span.y:
+				rail_head = _rail_head_bridge
 		var car: Node3D = cars[index]
-		car.global_position = point + Vector3.UP * 0.9
+		car.global_position = point + Vector3.UP * (_car_half_height + rail_head)
 		car.rotation.y = atan2(-ahead.x * train["direction"], -ahead.z * train["direction"])

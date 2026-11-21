@@ -269,11 +269,13 @@ func _apply_weather_effects() -> void:
 	if world_env != null and world_env.environment != null:
 		var env := world_env.environment
 		# Rain and overcast increase fog density and turn haze cool blue-grey
-		var base_density := 0.0011
-		var max_density := 0.0055 if rain_intensity > 0.5 else 0.0028
+		# Keep atmosphere without burying the neon skyline: at 1 km the old
+		# 0.0062 left almost no contrast, so distant towers vanished entirely.
+		var base_density := 0.00055
+		var max_density := 0.0020 if rain_intensity > 0.5 else 0.0011
 		env.fog_density = lerpf(base_density, max_density, maxf(overcast_factor, rain_intensity))
-		var clear_fog := Color("7d8b94")
-		var rain_fog := Color("4a545e")
+		var clear_fog := Color("6e7a83")
+		var rain_fog := Color("434d56")
 		env.fog_light_color = clear_fog.lerp(rain_fog, maxf(overcast_factor, rain_intensity))
 
 

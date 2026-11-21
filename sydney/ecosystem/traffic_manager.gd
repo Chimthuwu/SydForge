@@ -193,13 +193,16 @@ func _apply_time_profile() -> void:
 			"sunset", "dusk": period = "evening"
 			"night", "pre-dawn": period = "night"
 	var cap: int
+	# Reduced from 46/38/46/34/22 after the renderer audit showed ~4,500 draw
+	# calls at the old caps. The city still reads as populated at street level
+	# because spawns are player-centric and districts add local multipliers.
 	match period:
-		"morning": cap = 46 # Commuter peak
-		"daytime": cap = 38 # Commercial / shopping
-		"afternoon": cap = 46 # Afternoon peak
-		"evening": cap = 34 # Dining & entertainment
-		"night": cap = 22 # Quiet residential, busy nightlife hubs
-		_: cap = 38
+		"morning": cap = 32 # Commuter peak
+		"daytime": cap = 26 # Commercial / shopping
+		"afternoon": cap = 32 # Afternoon peak
+		"evening": cap = 24 # Dining & entertainment
+		"night": cap = 16 # Quiet residential, busy nightlife hubs
+		_: cap = 26
 	max_active_vehicles = maxi(6, int(float(cap) * density_multiplier))
 
 
