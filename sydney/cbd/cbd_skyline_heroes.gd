@@ -117,9 +117,12 @@ func _neon_material(color: Color) -> ShaderMaterial:
 	return m
 
 
+## Facade panel plane. QuadMesh stands vertically under a yaw rotation; the
+## previous horizontal PlaneMesh laid every "facade" panel flat, so the hero
+## towers never received their light panels.
 func _quad(parent: Node3D, pos: Vector3, size: Vector2, yaw: float, material: Material) -> void:
 	var mesh := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
+	var plane := QuadMesh.new()
 	plane.size = size
 	mesh.mesh = plane
 	mesh.material_override = material

@@ -124,8 +124,8 @@ func _ready() -> void:
 	if using_sydney:
 		rig.yaw = sydney_world.player_yaw
 	add_child(rig)
-	var resources := ["comet","viper","hauler","taxi"]
-	for i in 4:
+	var resources := ["comet","viper","hauler","taxi","motorbike"]
+	for i in resources.size():
 		var car: ArcadeCar = load("res://scenes/vehicles/%s.tscn" % resources[i]).instantiate()
 		if using_sydney and i < sydney_world.vehicle_spawns.size():
 			car.position = sydney_world.vehicle_spawns[i]
@@ -141,10 +141,14 @@ func _ready() -> void:
 	add_child(enemy)
 	enemy.position = enemy.home
 	build_hud()
+	var nos := preload("res://scripts/nos_overlay.gd").new()
+	nos.name = "NOSOverlay"
+	add_child(nos)
+	nos.setup(player)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G,"wheelie":KEY_B,"skate_boost":KEY_N,"skate_trick":KEY_T}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -156,6 +160,14 @@ func configure_input() -> void:
 	var mouse := InputEventMouseButton.new()
 	mouse.button_index = MOUSE_BUTTON_LEFT
 	InputMap.action_add_event("fire",mouse)
+	if not InputMap.has_action("skateboard"):
+		InputMap.add_action("skateboard")
+	var right_alt := InputEventKey.new()
+	right_alt.physical_keycode = KEY_ALT
+	# Key location constants live in @GlobalScope in Godot 4
+	# (`InputEventKey.LOCATION_*` does not exist and fails to parse).
+	right_alt.location = KEY_LOCATION_RIGHT
+	InputMap.action_add_event("skateboard", right_alt)
 	if not InputMap.has_action("aim"):
 		InputMap.add_action("aim")
 	var aim_mouse := InputEventMouseButton.new()
@@ -294,7 +306,7 @@ func _process(dt: float) -> void:
 			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") else "DRIVE"
 			hint_text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
 		else:
-			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload · G sniff petrol"
+			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload · G sniff petrol · B wheelie (bike) · RIGHT ALT skateboard · N board boost · T trick"
 	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
 		hint_text = "MOUSE RELEASED · Click to resume     F5  respawn"
 	_set_label_text(hint, hint_text)

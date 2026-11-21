@@ -99,10 +99,41 @@ const STATIONS := [
 var stats: Dictionary = {}
 
 
+## Plan of the southern open rail cutting, sampled every second route index
+## between the descent start (-33 m) and the first enclosed bore segment.
+## The cut curves ~52 m across XZ, so a single axis-aligned rectangle either
+## misses the ends or opens a crater far wider than the trench. These samples
+## follow the trench; `tests/cbd_rail_network_test.gd` re-derives them from the
+## live route and fails if the corridor drifts away from its opening.
+const DESCENT_CUT_POINTS := [
+	Vector2(-206.56, -1402.84), Vector2(-210.14, -1392.09),
+	Vector2(-213.79, -1381.65), Vector2(-218.54, -1369.02),
+	Vector2(-223.28, -1356.38), Vector2(-228.03, -1343.75),
+	Vector2(-232.63, -1331.29), Vector2(-236.79, -1319.22),
+	Vector2(-240.53, -1307.55), Vector2(-244.08, -1294.49),
+	Vector2(-247.37, -1281.15), Vector2(-249.89, -1268.91),
+	Vector2(-252.01, -1257.32), Vector2(-253.72, -1246.36),
+	Vector2(-255.78, -1231.93), Vector2(-257.02, -1220.69),
+	Vector2(-257.85, -1206.17), Vector2(-258.14, -1193.24),
+	Vector2(-258.18, -1181.09), Vector2(-257.76, -1167.91),
+	Vector2(-256.86, -1152.05), Vector2(-255.05, -1137.48),
+	Vector2(-253.23, -1122.92), Vector2(-251.67, -1112.48),
+	Vector2(-249.72, -1102.05), Vector2(-247.43, -1089.77),
+	Vector2(-245.15, -1077.49), Vector2(-243.35, -1063.80),
+	Vector2(-241.69, -1049.08), Vector2(-240.16, -1033.34),
+	Vector2(-238.63, -1017.60), Vector2(-237.22, -1003.29),
+	Vector2(-235.92, -990.41), Vector2(-234.69, -978.39),
+	Vector2(-233.54, -967.22), Vector2(-232.06, -954.41),
+]
+## Opening size per sample. The cutting walls stand 6.4 m either side of the
+## centreline and samples are ~12 m apart, so 16 m keeps a small ledge while
+## leaving no unbroken ground bridging consecutive samples.
+const DESCENT_CUT_OPENING := 16.0
+
+
 static func openings() -> Array:
-	## World-space rectangular ground openings (axis-aligned in XZ).
-	## Each entry: {"x","z","w","h"} centre + half-extents in metres? no, use
-	## centre x,z and full width/height for simplicity.
+	## World-space rectangular ground openings (axis-aligned in XZ), each with a
+	## centre and full width/height in metres.
 	var result: Array = []
 	for spec in STATIONS:
 		if str(spec.get("kind", "")) != "underground":
@@ -113,12 +144,14 @@ static func openings() -> Array:
 		var ch: float = float(spec.get("concourse", Vector2(24, 14)).y) + 10.0
 		result.append({"id": spec["id"], "x": cx, "z": cz, "w": cw, "h": ch})
 	# The southern bridge descent is an open cut before it becomes a bore.
-	# Without this opening the train is rendered inside an unbroken ground slab
-	# for ~250 m. Bounds follow the authored route points 258..330.
-	result.append({
-		"id": "bridge_descent_cut", "x": -237.0, "z": -1135.0,
-		"w": 64.0, "h": 410.0,
-	})
+	# Without an opening the train is rendered inside an unbroken ground slab.
+	for index in DESCENT_CUT_POINTS.size():
+		var point: Vector2 = DESCENT_CUT_POINTS[index]
+		result.append({
+			"id": "bridge_descent_cut_%02d" % index,
+			"x": point.x, "z": point.y,
+			"w": DESCENT_CUT_OPENING, "h": DESCENT_CUT_OPENING,
+		})
 	return result
 
 

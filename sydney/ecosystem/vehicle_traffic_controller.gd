@@ -160,11 +160,12 @@ func _setup_vehicle() -> void:
 	vehicle_length = float(specs.get("length", 4.5))
 	vehicle_width = float(specs.get("width", 1.9))
 	
-	max_speed = specs.get("max_speed", 16.0) * 0.45
+	max_speed = specs.get("max_speed", 16.0) * 0.72
 	if is_emergency_responding:
-		max_speed *= 1.4
+		max_speed *= 1.2
+	max_speed = minf(max_speed, 42.0)
 	target_speed = max_speed
-	accel_rate = specs.get("accel", 10.0) * 0.7
+	accel_rate = specs.get("accel", 10.0) * 1.05
 	turn_speed = specs.get("turn", 2.2)
 	
 	# Collision shape

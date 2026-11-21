@@ -90,6 +90,17 @@ func _physics_process(dt: float) -> void:
 		jump_buffer = 0
 		global_position = vehicle.global_position
 		return
+	if Input.is_action_just_pressed("skateboard"):
+		toggle_skateboard()
+	var board: Node3D = null
+	if has_meta("skateboard"):
+		board = get_meta("skateboard") as Node3D
+	if board != null:
+		if is_instance_valid(board):
+			global_position = board.global_position
+		else:
+			remove_meta("skateboard")
+		return
 	var input := Input.get_vector("left","right","forward","back")
 	var direction := Vector3(input.x,0,input.y).rotated(Vector3.UP,world.rig.yaw)
 	aiming = Input.is_action_pressed("aim")
@@ -507,6 +518,28 @@ func melee() -> void:
 	var tween := create_tween()
 	tween.tween_property(model,"rotation:z",-0.22,0.08)
 	tween.tween_property(model,"rotation:z",0.0,0.18)
+
+var skateboard_scene: PackedScene = preload("res://scenes/skateboard.tscn")
+
+
+func toggle_skateboard() -> void:
+	if vehicle != null:
+		return
+	var board: Node3D = null
+	if has_meta("skateboard"):
+		board = get_meta("skateboard") as Node3D
+	if board != null and is_instance_valid(board):
+		board.call("dismount")
+		remove_meta("skateboard")
+		if world != null:
+			world.set("message", "SKATEBOARD STOWED")
+		return
+	var inst := skateboard_scene.instantiate() as Node3D
+	get_parent().add_child(inst)
+	inst.call("mount", self)
+	if world != null:
+		world.set("message", "SKATEBOARD · WASD carve · SPACE ollie/grind · T trick · N boost · RIGHT ALT stow")
+
 
 func take_damage(amount: float) -> void:
 	if invulnerable > 0 or vehicle != null:

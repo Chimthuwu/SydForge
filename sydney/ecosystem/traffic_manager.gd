@@ -412,72 +412,90 @@ func _pick_vehicle_class(is_arterial: bool) -> int:
 	
 	# Time-adjusted weights
 	if is_night:
-		# Night: Taxis, Police, Sports cars, Sedans, Utes
-		if roll < 0.28:
+		# Night: performance cars are common alongside taxis and police.
+		if roll < 0.20:
 			return VehicleVisualBuilder.VehicleClass.TAXI
-		elif roll < 0.48:
+		elif roll < 0.34:
 			return VehicleVisualBuilder.VehicleClass.SEDAN
-		elif roll < 0.60:
+		elif roll < 0.42:
 			return VehicleVisualBuilder.VehicleClass.UTE
-		elif roll < 0.72:
+		elif roll < 0.54:
 			return VehicleVisualBuilder.VehicleClass.SPORTS
-		elif roll < 0.84:
+		elif roll < 0.64:
+			return VehicleVisualBuilder.VehicleClass.SUPERCAR
+		elif roll < 0.72:
+			return VehicleVisualBuilder.VehicleClass.MUSCLE
+		elif roll < 0.80:
+			return VehicleVisualBuilder.VehicleClass.COUPE
+		elif roll < 0.88:
 			return VehicleVisualBuilder.VehicleClass.POLICE
-		elif roll < 0.92:
+		elif roll < 0.94:
 			return VehicleVisualBuilder.VehicleClass.HATCHBACK
-		elif roll < 0.96:
-			return VehicleVisualBuilder.VehicleClass.AMBULANCE
-		else:
+		elif roll < 0.97:
 			return VehicleVisualBuilder.VehicleClass.MOTORBIKE
+		else:
+			return VehicleVisualBuilder.VehicleClass.PERFORMANCE_SEDAN
 	elif is_arterial:
-		# Arterial: heavy commercial trucks, buses, utes, delivery vans
-		if roll < 0.14:
+		# Arterials carry a visible mix of performance cars and ordinary traffic.
+		if roll < 0.10:
 			return VehicleVisualBuilder.VehicleClass.BUS
-		elif roll < 0.26:
+		elif roll < 0.18:
 			return VehicleVisualBuilder.VehicleClass.UTE
-		elif roll < 0.38:
+		elif roll < 0.26:
 			return VehicleVisualBuilder.VehicleClass.SEMI_TRAILER
-		elif roll < 0.48:
+		elif roll < 0.32:
 			return VehicleVisualBuilder.VehicleClass.BOX_TRUCK
-		elif roll < 0.58:
+		elif roll < 0.40:
 			return VehicleVisualBuilder.VehicleClass.DELIVERY_VAN
-		elif roll < 0.68:
+		elif roll < 0.48:
 			return VehicleVisualBuilder.VehicleClass.SUV_4WD
-		elif roll < 0.78:
+		elif roll < 0.58:
 			return VehicleVisualBuilder.VehicleClass.SEDAN
-		elif roll < 0.86:
+		elif roll < 0.64:
 			return VehicleVisualBuilder.VehicleClass.TAXI
-		elif roll < 0.92:
+		elif roll < 0.70:
 			return VehicleVisualBuilder.VehicleClass.POLICE
-		elif roll < 0.96:
-			return VehicleVisualBuilder.VehicleClass.AMBULANCE
-		elif roll < 0.98:
-			return VehicleVisualBuilder.VehicleClass.FIRE_TRUCK
+		elif roll < 0.76:
+			return VehicleVisualBuilder.VehicleClass.SPORTS
+		elif roll < 0.82:
+			return VehicleVisualBuilder.VehicleClass.SUPERCAR
+		elif roll < 0.88:
+			return VehicleVisualBuilder.VehicleClass.MUSCLE
+		elif roll < 0.93:
+			return VehicleVisualBuilder.VehicleClass.PERFORMANCE_SEDAN
+		elif roll < 0.97:
+			return VehicleVisualBuilder.VehicleClass.COUPE
 		else:
 			return VehicleVisualBuilder.VehicleClass.MOTORBIKE
 	else:
-		# City streets: sedans, hatchbacks, taxis, utes, vans, motorbikes, emergency
-		if roll < 0.20:
+		# City streets: a broad, varied pool with common sports/performance cars.
+		if roll < 0.13:
 			return VehicleVisualBuilder.VehicleClass.SEDAN
-		elif roll < 0.34:
+		elif roll < 0.23:
 			return VehicleVisualBuilder.VehicleClass.HATCHBACK
-		elif roll < 0.46:
+		elif roll < 0.31:
 			return VehicleVisualBuilder.VehicleClass.TAXI
-		elif roll < 0.58:
+		elif roll < 0.39:
 			return VehicleVisualBuilder.VehicleClass.UTE
-		elif roll < 0.68:
+		elif roll < 0.46:
 			return VehicleVisualBuilder.VehicleClass.SUV_4WD
-		elif roll < 0.78:
+		elif roll < 0.52:
 			return VehicleVisualBuilder.VehicleClass.DELIVERY_VAN
-		elif roll < 0.84:
+		elif roll < 0.58:
 			return VehicleVisualBuilder.VehicleClass.MOTORBIKE
-		elif roll < 0.88:
+		elif roll < 0.62:
 			return VehicleVisualBuilder.VehicleClass.SCOOTER
-		elif roll < 0.92:
-			return VehicleVisualBuilder.VehicleClass.BUS
-		elif roll < 0.96:
+		elif roll < 0.70:
+			return VehicleVisualBuilder.VehicleClass.SPORTS
+		elif roll < 0.77:
+			return VehicleVisualBuilder.VehicleClass.SUPERCAR
+		elif roll < 0.83:
+			return VehicleVisualBuilder.VehicleClass.MUSCLE
+		elif roll < 0.89:
+			return VehicleVisualBuilder.VehicleClass.PERFORMANCE_SEDAN
+		elif roll < 0.94:
+			return VehicleVisualBuilder.VehicleClass.COUPE
+		elif roll < 0.97:
 			return VehicleVisualBuilder.VehicleClass.POLICE
-		elif roll < 0.98:
-			return VehicleVisualBuilder.VehicleClass.AMBULANCE
 		else:
-			return VehicleVisualBuilder.VehicleClass.GARBAGE_TRUCK
+			return VehicleVisualBuilder.VehicleClass.BUS

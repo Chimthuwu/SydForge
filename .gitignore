@@ -1,5 +1,7 @@
 .godot/
-.runtime/
+# Godot user data / shader cache. Every .runtime-<name> directory is a generated
+# per-run APPDATA with the same disposable contents; none of it belongs in Git.
+.runtime*/
 *.log
 Godot*.exe
 tests/*.png

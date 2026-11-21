@@ -63,9 +63,11 @@ func _holo(color: Color, seed: int, alpha: float) -> ShaderMaterial:
 	return m
 
 
+## Wall-mounted sign plane. QuadMesh stands upright under a yaw rotation; a
+## horizontal PlaneMesh laid these screens flat on the ground.
 func _quad(parent: Node3D, pos: Vector3, size: Vector2, yaw: float, mat: Material) -> void:
 	var mesh := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
+	var plane := QuadMesh.new()
 	plane.size = size
 	mesh.mesh = plane
 	mesh.material_override = mat

@@ -413,12 +413,17 @@ func _track_basis(direction: Vector3) -> Basis:
 	return Basis(side, Vector3.UP, forward)
 
 
+## Emit an oriented box. `open_ends` omits the two faces across the local Z
+## axis, which is what a run of abutting tunnel segments needs: those caps are
+## interior to the bore, and with `CULL_DISABLED` materials they rendered as a
+## flat wall across the tunnel at every change in segment orientation.
 func _emit_box(
 	surface: SurfaceTool,
 	center: Vector3,
 	basis: Basis,
 	size: Vector3,
-	normal: Vector3
+	normal: Vector3,
+	open_ends: bool = false
 ) -> void:
 	var x := basis.x * size.x * 0.5
 	var y := basis.y * size.y * 0.5
@@ -431,8 +436,9 @@ func _emit_box(
 	var p101 := center + x - y + z
 	var p111 := center + x + y + z
 	var p011 := center - x + y + z
-	_emit_face(surface, [p000, p100, p110, p010], -basis.z)
-	_emit_face(surface, [p101, p001, p011, p111], basis.z)
+	if not open_ends:
+		_emit_face(surface, [p000, p100, p110, p010], -basis.z)
+		_emit_face(surface, [p101, p001, p011, p111], basis.z)
 	_emit_face(surface, [p001, p000, p010, p011], -basis.x)
 	_emit_face(surface, [p100, p101, p111, p110], basis.x)
 	_emit_face(surface, [p010, p110, p111, p011], basis.y)
@@ -811,17 +817,21 @@ func _build_tunnel_enclosures() -> void:
 		var left_wall_pos := mid + basis.x * (-tunnel_half_w) + Vector3.UP * wall_center_y
 		var right_wall_pos := mid + basis.x * (tunnel_half_w) + Vector3.UP * wall_center_y
 		var ceiling_pos := mid + Vector3.UP * ceiling_y
-		var wall_size := Vector3(wall_thickness, wall_height, length + 0.05)
-		var ceiling_size := Vector3(tunnel_half_w * 2.0 + wall_thickness, 0.45, length + 0.05)
-		_emit_box(wall_surface, left_wall_pos, basis, wall_size, Vector3.UP)
-		_emit_box(wall_surface, right_wall_pos, basis, wall_size, Vector3.UP)
-		_emit_box(ceiling_surface, ceiling_pos, basis, ceiling_size, Vector3.UP)
+		# Exact segment length, not an overlapping length + margin: two coplanar
+		# box faces separated by 5 cm z-fight, which is the moire pattern that
+		# covered the bore ceiling. End caps are omitted for the same reason.
+		var wall_size := Vector3(wall_thickness, wall_height, length)
+		var ceiling_size := Vector3(tunnel_half_w * 2.0 + wall_thickness, 0.45, length)
+		_emit_box(wall_surface, left_wall_pos, basis, wall_size, Vector3.UP, true)
+		_emit_box(wall_surface, right_wall_pos, basis, wall_size, Vector3.UP, true)
+		_emit_box(ceiling_surface, ceiling_pos, basis, ceiling_size, Vector3.UP, true)
 		_emit_box(
 			detail_surface,
 			mid + basis.x * (tunnel_half_w - 0.7) + Vector3.UP * (track_y + 0.45),
 			basis,
-			Vector3(0.7, 0.12, length + 0.05),
-			Vector3.UP
+			Vector3(0.7, 0.12, length),
+			Vector3.UP,
+			true
 		)
 
 		# Batched collision shapes keep enclosure solidity with far fewer nodes.
@@ -846,13 +856,21 @@ func _build_tunnel_enclosures() -> void:
 
 ## Open cut between the southern bridge approach and the first deep bore.
 ## The matching ground opening is emitted by StationInteriors.openings().
+##
+## Both ends are derived from the route rather than hardcoded indices: the cut
+## starts where the track first sinks below grade after the bridge and ends at
+## the first enclosed bore segment. The old fixed 258..330 window ran past the
+## bore mouth, so a 6.8 m concrete box stood inside the open cut, and it stopped
+## short at the north end, leaving the track buried under the ground slab.
 func _build_descent_cutting() -> void:
-	if main_route_points.size() < 335:
+	if main_route_points.size() < 4:
+		return
+	var first := _descent_cut_first_index()
+	var last := _descent_cut_last_index()
+	if first < 0 or last <= first:
 		return
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var first := 258
-	var last := mini(330, main_route_points.size() - 2)
 	for i in range(first, last):
 		var a := main_route_points[i]
 		var b := main_route_points[i + 1]
@@ -873,10 +891,63 @@ func _build_descent_cutting() -> void:
 		var center_y := (top + bottom) * 0.5
 		for side in [-1.0, 1.0]:
 			var wall_pos: Vector3 = mid + basis.x * (float(side) * 6.4) + Vector3.UP * center_y
-			_emit_box(surface, wall_pos, basis, Vector3(0.7, height, length + 0.06), Vector3.UP)
+			_emit_box(surface, wall_pos, basis, Vector3(0.7, height, length), Vector3.UP)
 		var floor_pos := mid + Vector3.UP * (track_y - 0.42)
-		_emit_box(surface, floor_pos, basis, Vector3(13.2, 0.3, length + 0.06), Vector3.UP)
+		_emit_box(surface, floor_pos, basis, Vector3(13.2, 0.3, length), Vector3.UP)
 	_commit_mesh("RailDescentCutting", surface, Color("5a5750"), 0.97)
+	_build_cutting_portal(first, last)
+
+
+## First route index of the southern open cut: just past the bridge, where the
+## authored descent first drops the track below grade.
+func _descent_cut_first_index() -> int:
+	var start := maxi(_bridge_range.y + 1, 0)
+	for i in range(start, main_route_points.size()):
+		if main_route_points[i].y < -1.0:
+			return i
+	return -1
+
+
+## First enclosed bore segment after the cut, i.e. where the walled tunnel begins.
+func _descent_cut_last_index() -> int:
+	var first := _descent_cut_first_index()
+	if first < 0:
+		return -1
+	for i in range(first, main_route_points.size() - 1):
+		if _is_tunnel_segment(i):
+			return i
+	return mini(first + 74, main_route_points.size() - 2)
+
+
+## Headwall where the open cut meets the enclosed bore. Without it the first
+## tunnel segment simply ends in the cutting as a bare 6.8 m box.
+func _build_cutting_portal(first: int, last: int) -> void:
+	if last <= first or last + 1 >= main_route_points.size():
+		return
+	var anchor: Vector3 = main_route_points[last + 1]
+	var forward := _route_direction(last + 1)
+	var portal := Node3D.new()
+	portal.name = "WynyardRailCuttingPortal"
+	portal.position = Vector3(anchor.x, 0.0, anchor.z)
+	portal.rotation.y = atan2(-forward.x, -forward.z)
+	add_child(portal)
+	var open_half := 5.4
+	var opening_top := anchor.y + TUNNEL_WALL_HEIGHT - 0.2
+	var face_top := 0.6
+	if opening_top >= face_top:
+		return
+	var wall_h := face_top - opening_top
+	# Side piers either side of the bore opening, plus the headwall above it.
+	for side in [-1.0, 1.0]:
+		ART.box(
+			portal, Vector3(float(side) * (open_half + 0.8), (opening_top + face_top) * 0.5, 0.0),
+			Vector3(1.6, wall_h, 0.9), Color("6b675f")
+		)
+	ART.box(
+		portal, Vector3(0.0, opening_top + wall_h * 0.5, 0.0),
+		Vector3(open_half * 2.0 + 3.2, wall_h, 0.9), Color("6b675f")
+	)
+	ART.box(portal, Vector3(0.0, face_top + 0.25, 0.0), Vector3(open_half * 2.0 + 4.0, 0.5, 1.4), Color("8b8578"))
 
 
 func _add_collision_box(parent: StaticBody3D, center: Vector3, basis: Basis, size: Vector3) -> void:

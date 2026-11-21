@@ -52,7 +52,7 @@ const WEAPON_PROFILES := {
 	},
 }
 
-const IMPACT_KINDS := ["concrete", "metal", "flesh"]
+const IMPACT_KINDS := ["concrete", "metal", "flesh", "explosion"]
 
 var _streams: Dictionary = {}
 var _pools: Dictionary = {}
@@ -244,7 +244,7 @@ func _build_impact_streams() -> void:
 
 func _bake_impact(kind: String) -> AudioStreamWAV:
 	const SAMPLE_RATE := 22050
-	var duration := 0.22 if kind == "metal" else 0.16
+	var duration := 1.2 if kind == "explosion" else (0.22 if kind == "metal" else 0.16)
 	var count := int(SAMPLE_RATE * duration)
 	var data := PackedByteArray()
 	data.resize(count * 2)
@@ -260,6 +260,9 @@ func _bake_impact(kind: String) -> AudioStreamWAV:
 		low = lerpf(low, noise, 0.22 if kind == "flesh" else 0.5)
 		var value := 0.0
 		match kind:
+			"explosion":
+				var boom := sin(TAU * (60.0 - time * 28.0) * time) * exp(-time * 3.2)
+				value = boom * 0.85 + low * exp(-time * 5.0) * 0.5
 			"metal":
 				value = (noise - low) * exp(-time * 50.0) * 0.55
 				value += sin(TAU * 1650.0 * time) * exp(-time * 26.0) * 0.22
@@ -295,6 +298,10 @@ func play_impact(kind: String, world_position: Vector3) -> void:
 	voice.global_position = world_position
 	voice.pitch_scale = randf_range(0.9, 1.1)
 	voice.play()
+
+
+func play_explosion(world_position: Vector3 = Vector3.ZERO) -> void:
+	play_impact("explosion", world_position)
 
 
 func play_thunder() -> void:

@@ -82,10 +82,12 @@ func _holo_material(color: Color, seed: float, alpha: float = 0.42) -> ShaderMat
 	return material
 
 
+## Wall-mounted sign plane (see CbdNeonCity._quad): QuadMesh stands upright
+## under a yaw rotation, unlike a horizontal PlaneMesh.
 func _quad(parent: Node3D, name: String, pos: Vector3, size: Vector2, yaw: float, material: Material) -> MeshInstance3D:
 	var mesh := MeshInstance3D.new()
 	mesh.name = name
-	var plane := PlaneMesh.new()
+	var plane := QuadMesh.new()
 	plane.size = size
 	mesh.mesh = plane
 	mesh.material_override = material

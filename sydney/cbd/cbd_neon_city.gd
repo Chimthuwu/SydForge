@@ -73,8 +73,16 @@ var _signed: Dictionary = {}
 var _towered: Dictionary = {}
 var _batches: Dictionary = {}
 var _beacon_batch: Array[Transform3D] = []
+## Emissive StandardMaterial3D instances (opera edge light, bridge deck lamps,
+## harbour path lights). Their energy is scaled by the night factor so they do
+## not glow at midday.
+var _night_emissives: Array = []
 var _unit_quad: PlaneMesh
 var _sun: DirectionalLight3D
+## Skyline light dressing is pure light (batched glow strips and rooftop
+## adverts) with no physical body, so it is hidden entirely in daylight rather
+## than left as a grid of unlit rectangles across the skyline.
+var _skyline_root: Node3D
 
 
 func build(world_data: Dictionary, harbour_bridge: Node3D = null) -> void:
@@ -136,10 +144,13 @@ func _beacon() -> ShaderMaterial:
 	return _beacon_material
 
 
+## Wall-mounted sign plane. `QuadMesh` lies in local XY facing +Z, so a yaw
+## rotation makes it stand on the facade; a horizontal `PlaneMesh` here left
+## every sign flat on the ground plane (invisible from the street).
 func _quad(parent: Node3D, pos: Vector3, size: Vector2, yaw: float, material: Material, name: String) -> MeshInstance3D:
 	var mesh := MeshInstance3D.new()
 	mesh.name = name
-	var plane := PlaneMesh.new()
+	var plane := QuadMesh.new()
 	plane.size = size
 	mesh.mesh = plane
 	mesh.material_override = material
@@ -160,6 +171,8 @@ func _box(parent: Node3D, pos: Vector3, size: Vector3, color: Color, emission: f
 		mat.emission_enabled = true
 		mat.emission = color
 		mat.emission_energy_multiplier = emission
+		mat.set_meta("night_energy", emission)
+		_night_emissives.append(mat)
 	mesh.material_override = mat
 	parent.add_child(mesh)
 	mesh.position = pos
@@ -195,6 +208,12 @@ func _wire_clock() -> void:
 
 func _apply_night_factor(factor: float) -> void:
 	_night_factor = clampf(factor, 0.0, 1.0)
+	if is_instance_valid(_skyline_root):
+		_skyline_root.visible = _night_factor > 0.04
+	for entry in _night_emissives:
+		var mat := entry as StandardMaterial3D
+		if mat != null:
+			mat.emission_energy_multiplier = float(mat.get_meta("night_energy")) * _night_factor
 	for material in _materials.values():
 		var sm := material as ShaderMaterial
 		if sm != null:
@@ -382,9 +401,16 @@ func _build_shop_sign(parent: Node3D, entry: Dictionary, palette: Array, index: 
 # Futuristic skyline
 # ---------------------------------------------------------------------------
 
+## A wall-plane strip: `size.x` runs along the facade tangent, `size.y` is the
+## strip height. `_unit_quad` is a PlaneMesh, whose triangles lie in its local
+## XZ plane, so the basis must map local X to the tangent and local Z to world
+## up. Scaling a horizontal plane by Y (the previous code) leaves it horizontal
+## and collapses its height, which showed up as dark slivers floating in the sky
+## above and around towers instead of vertical light strips on their facades.
 func _quad_xform(pos: Vector3, size: Vector2, yaw: float) -> Transform3D:
-	var basis := Basis(Vector3.UP, yaw)
-	basis = basis.scaled(Vector3(size.x, size.y, 1.0))
+	var normal := Vector3(sin(yaw), 0.0, cos(yaw))
+	var tangent := Vector3(cos(yaw), 0.0, -sin(yaw))
+	var basis := Basis(tangent * size.x, normal, Vector3.UP * size.y)
 	return Transform3D(basis, pos)
 
 
@@ -447,6 +473,7 @@ func _build_skyline(world_data: Dictionary) -> void:
 	var root := Node3D.new()
 	root.name = "SkylineDressing"
 	add_child(root)
+	_skyline_root = root
 
 	# Batched MultiMesh: hundreds of towers become a handful of draw calls.
 	var target := Vector2(300.0, 250.0)

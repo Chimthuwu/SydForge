@@ -1,6 +1,8 @@
 class_name ArcadeCar
 extends CharacterBody3D
 
+const VehicleCombatScript := preload("res://scripts/vehicle_combat.gd")
+
 ## Arcade vehicle overhaul — arcade handling, NOS boost, powerslide drift,
 ## rollovers and recovery.
 ##
@@ -24,6 +26,7 @@ extends CharacterBody3D
 @export var steering: float = 2.2
 @export var max_health: float = 120.0
 @export var style: int = 0
+@export var is_motorbike: bool = false
 
 ## Arcade tuning — one place, overridden per vehicle scene.
 @export var mass: float = 1450.0
@@ -57,6 +60,7 @@ var boost_audio: AudioStreamPlayer3D
 var brake_lights: Array[MeshInstance3D]
 var skid_marks: SkidMarks
 var effects: VehicleEffects
+var combat: RefCounted
 var repair_time := 0.0
 var boost_amount := 0.0
 var boost_on := false
@@ -88,6 +92,7 @@ func _ready() -> void:
 	collision.position.y = 0.9
 	add_child(collision)
 	body_art = Node3D.new()
+	body_art.name = "BodyArt"
 	add_child(body_art)
 	Art.tapered_box(body_art,Vector3(0,0.75,0),Vector3(2,0.65,4.1),Vector2(1.85,3.85),paint)
 	var cabin_height := 1.3 if style == 2 else (0.55 if style == 1 else 0.8)
@@ -128,6 +133,11 @@ func _ready() -> void:
 		if style == 1:
 			Art.box(body_art,Vector3(0,1.35,1.8),Vector3(2.2,0.12,0.5),paint)
 		Art.box(body_art,Vector3(0,0.66,2.09),Vector3(0.55,0.17,0.04),Color("f0e4ca"))
+	if is_motorbike:
+		for part in body_art.get_children():
+			if part is MeshInstance3D:
+				(part as MeshInstance3D).visible = false
+		_build_bike_visual()
 	# Painted metal rather than flat plastic: the Art cache shares one rough
 	# material per colour, so duplicate before polishing the car body.
 	for part in body_art.get_children():
@@ -144,9 +154,59 @@ func _ready() -> void:
 		wheel_visual.reparent(self, true)
 	skid_marks = SkidMarks.new(self)
 	effects = VehicleEffects.new(self)
+	combat = VehicleCombatScript.new(self)
 	setup_engine_audio()
 	setup_boost_audio()
 	add_to_group("vehicles")
+
+
+var rider: Node3D
+var front_wheel_visual: MeshInstance3D
+var wheelie := 0.0
+var wheelie_active := false
+
+
+func _build_bike_visual() -> void:
+	# Single-track silhouette: narrow chassis, exposed engine, two wheels,
+	# handlebars and a seat. Wheels are stored separately for wheelie pose.
+	Art.box(body_art, Vector3(0, 0.62, 0), Vector3(0.42, 0.34, 1.85), paint)
+	Art.box(body_art, Vector3(0, 0.74, -0.15), Vector3(0.5, 0.18, 0.85), Color("2b3138"))
+	Art.box(body_art, Vector3(0, 0.92, -0.9), Vector3(0.62, 0.12, 0.28), Color("20262b"))
+	Art.box(body_art, Vector3(0, 0.62, -1.0), Vector3(0.5, 0.5, 0.2), Color("1c2126"))
+	for side in [-1, 1]:
+		Art.box(body_art, Vector3(side * 0.34, 0.92, -0.9), Vector3(0.06, 0.06, 0.5), Color("30383d"))
+		var wheel := Art.cylinder(body_art, Vector3(0, 0.42, side * 1.0), 0.42, 0.16, Color("171a1d"))
+		wheel.rotation.z = PI / 2
+		wheel_visuals.append(wheel)
+		wheels.append(wheel)
+		if side < 0:
+			front_wheel_visual = wheel
+	brake_lights.append(Art.box(body_art, Vector3(0, 0.72, 1.0), Vector3(0.22, 0.12, 0.06), Color("c11f26")))
+
+
+func _build_rider() -> void:
+	if rider != null and is_instance_valid(rider):
+		return
+	rider = Node3D.new()
+	rider.name = "Rider"
+	body_art.add_child(rider)
+	# Seated, leaning-forward human pose with articulated arms and bent legs.
+	var skin := Color("c68642")
+	var jacket := Color("1f2c3a")
+	var pants := Color("2a2e37")
+	Art.box(rider, Vector3(0, 1.22, 0.05), Vector3(0.44, 0.5, 0.3), jacket)
+	Art.box(rider, Vector3(0, 1.48, -0.28), Vector3(0.24, 0.12, 0.3), skin)
+	Art.box(rider, Vector3(0, 1.62, -0.3), Vector3(0.25, 0.26, 0.25), skin)
+	Art.box(rider, Vector3(0, 1.75, -0.3), Vector3(0.27, 0.1, 0.27), Color("121417"))
+	for side in [-1, 1]:
+		var arm := Art.box(rider, Vector3(side * 0.24, 1.22, -0.46), Vector3(0.11, 0.11, 0.55), jacket)
+		arm.rotation.x = -0.45
+		Art.box(rider, Vector3(side * 0.28, 1.02, -0.7), Vector3(0.09, 0.1, 0.12), skin)
+		var thigh := Art.box(rider, Vector3(side * 0.26, 0.92, 0.12), Vector3(0.16, 0.16, 0.5), pants)
+		thigh.rotation.x = 0.35
+		var shin := Art.box(rider, Vector3(side * 0.28, 0.68, 0.38), Vector3(0.13, 0.36, 0.13), pants)
+		shin.rotation.x = -0.2
+		Art.box(rider, Vector3(side * 0.3, 0.5, 0.4), Vector3(0.14, 0.1, 0.25), Color("111418"))
 
 
 func setup_engine_audio() -> void:
@@ -201,10 +261,14 @@ func setup_boost_audio() -> void:
 func _process(dt: float) -> void:
 	if destroyed:
 		effects.update(dt, self)
+		if combat != null:
+			combat.update(dt)
 		return
 	var occupied := driver != null and health > 0
 	var throttle := maxf(0.0, Input.get_axis("back","forward")) if occupied else 0.0
 	engine_rpm = EngineAudio.gear_rpm(speed, top_speed)
+	if is_motorbike and wheelie_active:
+		engine_rpm = minf(1.0, engine_rpm + 0.18)
 	if engine_audio_system != null:
 		engine_audio_system.set_audible(occupied)
 		engine_audio_system.update_audio(dt, speed, engine_rpm, throttle, absf(lateral_speed), airborne)
@@ -219,6 +283,26 @@ func _process(dt: float) -> void:
 		if boost_audio.is_playing() and boost_factor < 0.08:
 			boost_audio.stop()
 	effects.update(dt, self)
+	if combat != null:
+		combat.update(dt)
+	if is_motorbike:
+		_update_wheelie(dt)
+
+
+func _update_wheelie(dt: float) -> void:
+	var wants := driver != null and Input.is_action_pressed("wheelie") \
+		and speed > 9.0 and absf(roll) < 0.35 and not destroyed
+	if wants:
+		wheelie = move_toward(wheelie, 1.0, dt * 1.6)
+	else:
+		wheelie = move_toward(wheelie, 0.0, dt * 2.4)
+	wheelie_active = wheelie > 0.15
+	if rider != null and is_instance_valid(rider):
+		# Leaning back with the bike during a wheelie.
+		rider.rotation.x = -wheelie * 0.22
+	if front_wheel_visual != null and is_instance_valid(front_wheel_visual):
+		front_wheel_visual.position.y = 0.42 + wheelie * 0.45
+	# Handled after suspension in _apply_suspension to avoid being overwritten.
 
 
 func _exit_tree() -> void:
@@ -336,7 +420,7 @@ func _suspension(dt: float) -> void:
 		sus_target = -0.04
 	sus_pitch = lerpf(sus_pitch, sus_target, 1.0-exp(-sus_pitch_rate*dt))
 	sus_pitch = clampf(sus_pitch, -0.12, 0.12)
-	body_art.rotation.x = sus_pitch
+	body_art.rotation.x = sus_pitch - wheelie * 0.5
 
 
 func _grip_and_drift(dt: float) -> void:
@@ -498,8 +582,15 @@ func _exit_blocked_hint() -> void:
 func enter(player: BoomPlayer) -> bool:
 	if driver != null or health <= 0:
 		return false
+	if player.has_meta("skateboard"):
+		var board: Node3D = player.get_meta("skateboard") as Node3D
+		if is_instance_valid(board):
+			board.call("dismount")
+		player.remove_meta("skateboard")
 	driver = player
 	player.vehicle = self
+	if is_motorbike:
+		_build_rider()
 	player.visible = false
 	player.collision_layer = 0
 	player.collision_mask = 0
@@ -545,22 +636,40 @@ func exit_vehicle() -> bool:
 func take_weapon_damage(amount: float) -> void:
 	if destroyed or health <= 0:
 		return
-	health = maxf(0, health - 20.0)
-	if health <= 0:
-		_destroy_vehicle()
+	if combat != null:
+		combat.apply_damage(amount)
+	else:
+		health = maxf(0, health - amount)
+		if health <= 0:
+			_destroy_vehicle()
 
 
 func take_damage(amount: float) -> void:
 	if destroyed or health <= 0:
 		return
-	health = maxf(0,health-amount)
-	if health <= 0:
-		_destroy_vehicle()
+	if combat != null:
+		combat.apply_damage(amount)
+	else:
+		health = maxf(0, health - amount)
+		if health <= 0:
+			_destroy_vehicle()
+
+
+## Explosion falloff damage from another destroyed vehicle. Chain reactions are
+## damped and time-gated in VehicleCombat so a single blast cannot loop forever.
+func take_explosion_damage(amount: float) -> void:
+	take_damage(amount * 0.5)
+
+
+func get_explosion_position() -> Vector3:
+	return global_position + Vector3.UP * 1.0
 
 
 ## Repair without the explosion presentation, used by tests and respawn logic.
 func repair_now() -> void:
 	destroyed = false
+	if combat != null:
+		combat.reset()
 	position = home
 	rotation = Vector3.ZERO
 	health = max_health

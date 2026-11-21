@@ -19,7 +19,11 @@ enum VehicleClass {
 	SCOOTER,
 	POLICE,
 	AMBULANCE,
-	FIRE_TRUCK
+	FIRE_TRUCK,
+	SUPERCAR,
+	MUSCLE,
+	PERFORMANCE_SEDAN,
+	COUPE
 }
 
 static func get_class_specs(vclass: int) -> Dictionary:
@@ -151,6 +155,38 @@ static func get_class_specs(vclass: int) -> Dictionary:
 				"wheel_radius": 0.52, "wheel_width": 0.32,
 				"max_speed": 26.0, "accel": 12.0, "turn": 1.3, "mass": 11000.0,
 				"lanes": ["arterial", "secondary", "primary", "trunk"]
+			}
+		VehicleClass.SUPERCAR:
+			return {
+				"name": "VELOCITY · SUPERCAR",
+				"length": 4.5, "width": 2.05, "height": 1.05,
+				"wheel_radius": 0.36, "wheel_width": 0.30,
+				"max_speed": 62.0, "accel": 40.0, "turn": 2.7, "mass": 1280.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.MUSCLE:
+			return {
+				"name": "COMMODORE · MUSCLE",
+				"length": 4.9, "width": 2.0, "height": 1.35,
+				"wheel_radius": 0.38, "wheel_width": 0.28,
+				"max_speed": 52.0, "accel": 32.0, "turn": 2.1, "mass": 1650.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.PERFORMANCE_SEDAN:
+			return {
+				"name": "SPORT · PERFORMANCE SEDAN",
+				"length": 4.8, "width": 1.95, "height": 1.38,
+				"wheel_radius": 0.36, "wheel_width": 0.25,
+				"max_speed": 50.0, "accel": 30.0, "turn": 2.35, "mass": 1550.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.COUPE:
+			return {
+				"name": "HERON · COUPE",
+				"length": 4.4, "width": 1.9, "height": 1.25,
+				"wheel_radius": 0.34, "wheel_width": 0.24,
+				"max_speed": 48.0, "accel": 28.0, "turn": 2.5, "mass": 1380.0,
+				"lanes": ["all"]
 			}
 		_:
 			return get_class_specs(VehicleClass.SEDAN)
@@ -331,6 +367,24 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 			wheels.append(_make_wheel(body_art, Vector3(half_w, wr, half_l - 2.4), wr, ww))
 			wheels.append(_make_wheel(body_art, Vector3(-half_w, wr, half_l - 0.9), wr, ww))
 			wheels.append(_make_wheel(body_art, Vector3(half_w, wr, half_l - 0.9), wr, ww))
+
+		VehicleClass.SUPERCAR, VehicleClass.MUSCLE, VehicleClass.PERFORMANCE_SEDAN, VehicleClass.COUPE:
+			# Distinct performance silhouettes: low wedge supercar, long-bonnet
+			# muscle car, compact performance sedan and coupe.
+			var low := vclass == VehicleClass.SUPERCAR
+			var body_h := 0.48 if low else 0.62
+			Art.box(body_art, Vector3(0, wr + body_h * 0.5, 0), Vector3(W, body_h, L), paint_color)
+			var cab_h := 0.38 if low else (0.58 if vclass == VehicleClass.MUSCLE else 0.5)
+			var cab_z := 0.35 if vclass == VehicleClass.MUSCLE else 0.05
+			Art.tapered_box(body_art, Vector3(0, wr + body_h + cab_h * 0.5, cab_z),
+				Vector3(W * 0.86, cab_h, L * 0.42), Vector2(W * 0.70, L * 0.32), Color("162431"))
+			if low:
+				Art.box(body_art, Vector3(0.0, wr + 0.06, -half_l - 0.05), Vector3(W * 0.9, 0.10, 0.3), Color("1b1f24"))
+				Art.box(body_art, Vector3(0.0, wr + body_h + 0.16, half_l * 0.55), Vector3(W * 0.8, 0.08, 0.5), Color("1b1f24"))
+			elif vclass == VehicleClass.MUSCLE:
+				Art.box(body_art, Vector3(0.0, wr + 0.62, -half_l * 0.55), Vector3(W * 0.95, 0.14, L * 0.35), paint_color)
+			_add_standard_lights(body_art, half_w * 0.8, wr + 0.35, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
 
 		_:
 			# Standard Sedans, Hatchbacks, SUVs, Delivery Vans

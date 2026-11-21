@@ -52,12 +52,14 @@ void fragment() {
 	float fl = 1.0 - flicker * step(0.945, hash21(cell + floor(TIME * 7.0)));
 	vec3 tint = mix(panel_color, accent_color, step(0.84, r));
 
-	vec3 backing = vec3(0.018, 0.024, 0.032);
+	vec3 backing = vec3(0.055, 0.062, 0.070);
 	float pattern = mix(glyph, 1.0, clamp(solid_glow, 0.0, 1.0));
 	// Push glyph luminance above 1.0 so the scene's glow/bloom picks it up.
 	vec3 glow = tint * pattern * scan * fl * inner * glow_strength * 2.4;
 	vec3 border = tint * (frame - inner) * 1.1 * glow_strength;
-	vec3 col3 = backing + (glow + border) * (0.18 + 0.82 * night_factor);
+	// Emissive content is night-only. The previous 0.18 daylight floor left a
+	// visibly lit cyan/green rectangle on every dressed tower at midday.
+	vec3 col3 = mix(backing, backing + glow + border, night_factor);
 	ALBEDO = col3;
 	ALPHA = 1.0;
 }

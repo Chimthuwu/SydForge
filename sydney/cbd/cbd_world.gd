@@ -102,6 +102,11 @@ var district_centres: Dictionary = {}
 var viewpoints: Dictionary = {}
 var building_stats: Dictionary = {}
 var greenery_stats: Dictionary = {}
+## World data restricted to buildings that are actually present in the scene.
+## Presentation modules (neon signage, skyline dressing, facade frames) must use
+## this, not the raw export: decorating a footprint the world deliberately
+## removed leaves its geometry floating in mid-air over an empty parcel.
+var presentation_data: Dictionary = {}
 
 
 func load_world(path: String = STAGE_B_PATH) -> bool:
@@ -163,8 +168,9 @@ func _build() -> void:
 
 	# Cyberpunk vertical slice: George Street CBD + Wynyard underground.
 	start = Time.get_ticks_usec()
+	var present := presentation_data if not presentation_data.is_empty() else data
 	var neon_slice := NeonSliceScript.new()
-	neon_slice.build(data)
+	neon_slice.build(present)
 	add_child(neon_slice)
 	geometry_counts["NeonVerticalSlice"] = neon_slice.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -173,7 +179,7 @@ func _build() -> void:
 
 	start = Time.get_ticks_usec()
 	var neon_city := NeonCityScript.new()
-	neon_city.build(data, get_node_or_null("HarbourBridge"))
+	neon_city.build(present, get_node_or_null("HarbourBridge"))
 	add_child(neon_city)
 	geometry_counts["NeonCity"] = neon_city.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -182,7 +188,7 @@ func _build() -> void:
 
 	start = Time.get_ticks_usec()
 	var skyline_heroes := SkylineHeroesScript.new()
-	skyline_heroes.build(data)
+	skyline_heroes.build(present)
 	add_child(skyline_heroes)
 	geometry_counts["SkylineHeroes"] = skyline_heroes.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -200,7 +206,7 @@ func _build() -> void:
 
 	start = Time.get_ticks_usec()
 	var arch_slice := ArchSliceScript.new()
-	arch_slice.build(data)
+	arch_slice.build(present)
 	add_child(arch_slice)
 	geometry_counts["ArchitectureSlice"] = arch_slice.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -243,6 +249,10 @@ func _build_buildings() -> void:
 	# landmark keeps its own site. This is the same filter Stage A uses.
 	var source_rows: Array = OperaHouseLandmark.filtered_buildings(data.get("buildings", []), landmark_podium)
 	var rows: Array = []
+	## Authored landmarks are excluded from the shell build (CbdLandmarks models
+	## them explicitly) but they are still real, present buildings, so the
+	## presentation layer may dress them.
+	var presentation_rows: Array = []
 	var removed_site_overlaps := 0
 	var authored_landmark_masses := 0
 	var removed_town_hall_infill := 0
@@ -250,6 +260,7 @@ func _build_buildings() -> void:
 	for row in source_rows:
 		if String(row.get("id", "")) in AUTHORED_LANDMARK_BUILDINGS:
 			authored_landmark_masses += 1
+			presentation_rows.append(row)
 			continue
 		if String(row.get("id", "")) in OPERA_HOUSE_SITE_OVERLAPS:
 			removed_site_overlaps += 1
@@ -261,6 +272,9 @@ func _build_buildings() -> void:
 			removed_rail_corridor += 1
 			continue
 		rows.append(row)
+		presentation_rows.append(row)
+	presentation_data = data.duplicate()
+	presentation_data["buildings"] = presentation_rows
 	var builder = CbdBuildings.new()
 	var result: Dictionary = builder.build(rows, player_spawn)
 	building_stats = result.get("stats", {})

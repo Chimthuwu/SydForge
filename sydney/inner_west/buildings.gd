@@ -544,8 +544,10 @@ static func _chimneys(
 	for side in 2:
 		if id_hash % 3 == 0 and side == 1:
 			continue  # some houses have a single chimney
-		var cx := rect[0] + (rect[2] - rect[0]) * (0.18 if side == 0 else 0.82)
-		var cz := rect[1] + (rect[3] - rect[1]) * (0.5 + (0.18 if id_hash % 2 == 0 else -0.18))
+		# `_ring_rect` returns an untyped Array, so the arithmetic result is
+		# Variant and `:=` cannot infer a type here.
+		var cx: float = rect[0] + (rect[2] - rect[0]) * (0.18 if side == 0 else 0.82)
+		var cz: float = rect[1] + (rect[3] - rect[1]) * (0.5 + (0.18 if id_hash % 2 == 0 else -0.18))
 		var base := roof_y - 0.25
 		var top := roof_y + height
 		var size := 0.62

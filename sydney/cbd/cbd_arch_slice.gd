@@ -59,6 +59,13 @@ func build(world_data: Dictionary) -> void:
 		if not detailed and height < 38.0:
 			continue
 		var style := str(row.get("style", "stone-commercial"))
+		# Outside the reviewed slice only glazed towers get the merged structural
+		# frame. Running full-height dark piers and floor bands over a masonry
+		# shell produced the reported "scaffolding wrapped around a building"
+		# look: the bars stand proud of a flat textured wall with no glazing
+		# depth behind them. Masonry keeps the shell's own facade treatment.
+		if not detailed and style != "glass-tower":
+			continue
 		var id := str(row.get("id", ""))
 		if id.is_empty() or _upgraded.has(id):
 			continue

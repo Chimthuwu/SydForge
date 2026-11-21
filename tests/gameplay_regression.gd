@@ -96,9 +96,12 @@ func _run() -> void:
 			_check("vehicle_grounded", car.global_position.y > -2.0 and car.global_position.y < 60.0,
 				"y %.2f" % car.global_position.y)
 			Input.action_press("back")
-			await _frames(90)
+			for brake_frame in 150:
+				if absf(float(car.get("speed"))) < 2.0:
+					break
+				await process_frame
 			Input.action_release("back")
-			await _frames(30)
+			await _frames(20)
 			var exited: bool = bool(car.call("exit_vehicle"))
 			await _frames(10)
 			_check("vehicle_exit", player.get("vehicle") == null, "exit=%s msg=%s" % [exited, str(scene.get("message"))])

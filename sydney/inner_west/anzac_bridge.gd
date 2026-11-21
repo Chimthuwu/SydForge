@@ -116,8 +116,6 @@ func build(road: Dictionary, grid: Dictionary) -> Dictionary:
 			if direction.length() < 1.0:
 				continue
 			direction = direction.normalized()
-			var forward := clampf(direction.dot(Vector3(1, 0, 0)), -1.0, 1.0)
-			_ = forward
 			var perp := Vector3(-direction.z, 0.0, direction.x)
 			var side := 1.0 if tower["s"] < total * 0.5 else -1.0
 			var anchor_distance := total * 0.24
@@ -188,11 +186,11 @@ func _add_tapered_tower(
 	# 4-sided tapered shaft: two sizes of box blended by shearing the top ring
 	var half_base := base_width * 0.5
 	var half_top := top_width * 0.5
-	var bottom := [
+	var bottom: Array[Vector3] = [
 		base + Vector3(-half_base, 0, -half_base), base + Vector3(half_base, 0, -half_base),
 		base + Vector3(half_base, 0, half_base), base + Vector3(-half_base, 0, half_base),
 	]
-	var upper := [
+	var upper: Array[Vector3] = [
 		top + Vector3(-half_top, 0, -half_top), top + Vector3(half_top, 0, -half_top),
 		top + Vector3(half_top, 0, half_top), top + Vector3(-half_top, 0, half_top),
 	]

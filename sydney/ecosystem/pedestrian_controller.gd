@@ -69,10 +69,13 @@ var _gesture_time: float = 0.0
 ## Distance LOD for the 50 peaceful walkers; see traffic controller.
 var _player: Node3D
 var _sim_accum: float = 0.0
+var _reaction: float = 0.0
 
 
 func _ready() -> void:
 	add_to_group("pedestrians")
+	if _archetype == "police":
+		add_to_group("police")
 	if body_root == null:
 		_build_visuals()
 
@@ -88,6 +91,8 @@ func setup(start_id: int, nodes_dict: Dictionary) -> void:
 
 func configure(profile: Dictionary) -> void:
 	_archetype = str(profile.get("archetype", _archetype))
+	if _archetype == "police" and not is_in_group("police"):
+		add_to_group("police")
 	_district = str(profile.get("district", _district))
 	_outfit = str(profile.get("outfit", _outfit))
 	if profile.has("skin"): _skin_color = profile["skin"]
@@ -570,10 +575,15 @@ func take_damage_at(amount: float, impact_position: Vector3, impact_intensity: f
 	if is_dead:
 		return
 	health = maxf(0.0, health - amount)
+	var was_alive := health > 0.0
 	GoreEffectsScript.spawn_hit_spray(get_parent(), impact_position, impact_intensity, shot_direction)
-	if health > 0.0:
-		return
-	_die(impact_intensity * shot_direction.normalized() * 3.0)
+	if _archetype == "police" and was_alive:
+		# Visible flinch / reaction to being shot.
+		_reaction = 0.5
+		if torso != null:
+			torso.rotation.x = -0.25
+	if not was_alive:
+		_die(impact_intensity * shot_direction.normalized() * 3.0)
 
 
 func hit_by_vehicle(impact_speed: float, source: Node3D = null) -> bool:
@@ -592,7 +602,11 @@ func _die(launch_velocity: Vector3) -> void:
 	if is_dead:
 		return
 	var wanted := get_tree().get_first_node_in_group("wanted_system")
-	if wanted != null:
+	if _archetype == "police":
+		remove_from_group("police_foot_patrol")
+		if wanted != null and wanted.has_method("officer_killed"):
+			wanted.call("officer_killed", global_position)
+	elif wanted != null:
 		wanted.add_crime(18.0, "PEDESTRIAN KILLED · police alerted")
 	is_dead = true
 	set_physics_process(false)

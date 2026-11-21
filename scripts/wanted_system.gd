@@ -31,6 +31,20 @@ func setup(player: Node3D) -> void:
 	_last_seen_time = 0.0
 
 
+## Called when a foot officer is killed. Escalates heat and alerts nearby units.
+func officer_killed(position: Vector3) -> void:
+	add_crime(22.0, "OFFICER DOWN · police alerted")
+	for car in police:
+		if is_instance_valid(car) and car.global_position.distance_to(position) < 240.0:
+			if car.has_method("set_alert"):
+				car.call("set_alert", position)
+	var incidents := get_tree().get_nodes_in_group("incident_managers")
+	for mgr in incidents:
+		if mgr.has_method("request_police_response"):
+			mgr.call("request_police_response", position, 1.2)
+			break
+
+
 func add_crime(amount: float, reason: String = "") -> void:
 	if amount <= 0.0:
 		return
