@@ -104,14 +104,20 @@ func _run() -> void:
 	var cut = railway.get_node_or_null("RailDescentCutting")
 	_check(cut != null, "open-cut retaining structure exists for the descent")
 
-	# 5. Ground opening covers the descent corridor.
+	# 5. The ground opening follows the descent corridor instead of a row of
+	#    axis-aligned squares that overhung the trench.
+	var world = railway.get_parent()
+	_check(world != null and world.get_node_or_null("Ground_RailCut") != null,
+		"ground slab is cut along the rail descent corridor")
 	var openings: Array = StationInteriorsScript.openings()
-	var has_cut := false
+	var square_cut := false
 	for opening in openings:
-		if str(opening.get("id", "")) == "bridge_descent_cut":
-			has_cut = true
+		if str(opening.get("id", "")).begins_with("bridge_descent_cut"):
+			square_cut = true
 			break
-	_check(has_cut, "ground slab has an opening for the rail descent")
+	_check(not square_cut, "descent no longer cuts the street with square holes")
+	_check(StationInteriorsScript.descent_cut_path().size() > 2,
+		"descent cut path is available to the ground builder")
 
 	# 6. Wynyard dressed platform coincides with the track anchor.
 	var interiors = scene.find_child("StationInteriors", true, false)

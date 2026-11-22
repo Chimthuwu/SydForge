@@ -23,7 +23,10 @@ enum VehicleClass {
 	SUPERCAR,
 	MUSCLE,
 	PERFORMANCE_SEDAN,
-	COUPE
+	COUPE,
+	ROADSTER,
+	HYPERCAR,
+	TRACK_CAR
 }
 
 static func get_class_specs(vclass: int) -> Dictionary:
@@ -186,6 +189,30 @@ static func get_class_specs(vclass: int) -> Dictionary:
 				"length": 4.4, "width": 1.9, "height": 1.25,
 				"wheel_radius": 0.34, "wheel_width": 0.24,
 				"max_speed": 48.0, "accel": 28.0, "turn": 2.5, "mass": 1380.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.ROADSTER:
+			return {
+				"name": "STING · ROADSTER",
+				"length": 4.2, "width": 1.88, "height": 1.12,
+				"wheel_radius": 0.34, "wheel_width": 0.26,
+				"max_speed": 54.0, "accel": 34.0, "turn": 2.75, "mass": 1150.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.HYPERCAR:
+			return {
+				"name": "PHANTOM · HYPERCAR",
+				"length": 4.7, "width": 2.12, "height": 0.98,
+				"wheel_radius": 0.36, "wheel_width": 0.32,
+				"max_speed": 70.0, "accel": 46.0, "turn": 2.85, "mass": 1240.0,
+				"lanes": ["all"]
+			}
+		VehicleClass.TRACK_CAR:
+			return {
+				"name": "APEX · TRACK SPECIAL",
+				"length": 4.35, "width": 2.05, "height": 1.08,
+				"wheel_radius": 0.35, "wheel_width": 0.30,
+				"max_speed": 58.0, "accel": 42.0, "turn": 3.0, "mass": 980.0,
 				"lanes": ["all"]
 			}
 		_:
@@ -386,6 +413,59 @@ static func build_vehicle_visuals(root: Node3D, vclass: int, paint_color: Color)
 			_add_standard_lights(body_art, half_w * 0.8, wr + 0.35, half_l, headlights, taillights)
 			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
 
+		VehicleClass.ROADSTER:
+			# Open two-seater: low tub, tapered nose, seats and roll hoops exposed.
+			var tub_h := 0.42
+			Art.box(body_art, Vector3(0, wr + tub_h * 0.5, 0.15), Vector3(W, tub_h, L * 0.86), paint_color)
+			Art.tapered_box(body_art, Vector3(0, wr + tub_h * 0.5, -half_l * 0.72),
+				Vector3(W * 0.94, tub_h, L * 0.38), Vector2(W * 0.58, 0.3), paint_color)
+			Art.box(body_art, Vector3(0, wr + tub_h + 0.02, 0.42), Vector3(W * 0.62, 0.18, L * 0.26), Color("141a20"))
+			for side in [-1.0, 1.0]:
+				Art.box(body_art, Vector3(side * W * 0.16, wr + tub_h + 0.12, 0.52), Vector3(W * 0.20, 0.16, L * 0.12), Color("2a2228"))
+				Art.box(body_art, Vector3(side * W * 0.20, wr + tub_h + 0.28, 0.68), Vector3(0.12, 0.26, 0.12), Color("20262b"))
+			Art.box(body_art, Vector3(0, wr + tub_h + 0.20, -0.02), Vector3(W * 0.66, 0.14, 0.05), Color("20303c"))
+			for side in [-1.0, 1.0]:
+				Art.box(body_art, Vector3(side * half_w, wr + 0.16, 0.1), Vector3(0.06, 0.10, L * 0.62), Color("1b2025"))
+			Art.box(body_art, Vector3(0, wr + tub_h + 0.07, half_l * 0.74), Vector3(W * 0.8, 0.10, 0.34), paint_color)
+			_add_standard_lights(body_art, half_w * 0.76, wr + 0.30, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.66, wheels)
+
+		VehicleClass.HYPERCAR:
+			# Long-tail hypercar: flat floor, bubble canopy, snorkel and rear wing.
+			var floor_h := 0.36
+			Art.box(body_art, Vector3(0, wr + floor_h * 0.5, 0), Vector3(W, floor_h, L), paint_color)
+			Art.tapered_box(body_art, Vector3(0, wr + floor_h + 0.04, -half_l * 0.42),
+				Vector3(W * 0.96, 0.20, L * 0.52), Vector2(W * 0.72, 0.28), paint_color)
+			Art.tapered_box(body_art, Vector3(0, wr + floor_h + 0.26, 0.05),
+				Vector3(W * 0.70, 0.36, L * 0.36), Vector2(W * 0.48, 0.20), Color("0f1720"))
+			Art.box(body_art, Vector3(0, wr + floor_h + 0.44, 0.34), Vector3(0.52, 0.12, 0.72), Color("11171c"))
+			Art.box(body_art, Vector3(0, wr + 0.10, -half_l - 0.08), Vector3(W * 0.98, 0.08, 0.42), Color("161b20"))
+			Art.box(body_art, Vector3(0, wr + floor_h + 0.50, half_l * 0.80), Vector3(W * 0.94, 0.06, 0.46), Color("11161a"))
+			for side in [-1.0, 1.0]:
+				Art.box(body_art, Vector3(side * W * 0.30, wr + floor_h + 0.28, half_l * 0.80), Vector3(0.06, 0.34, 0.10), Color("1b2126"))
+			Art.box(body_art, Vector3(0, wr + 0.16, half_l + 0.04), Vector3(W * 0.72, 0.16, 0.18), Color("101418"))
+			_add_standard_lights(body_art, half_w * 0.80, wr + 0.28, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.64, wheels)
+
+		VehicleClass.TRACK_CAR:
+			# Winged track special: exposed cage, canards and a tall rear wing.
+			var shell_h := 0.46
+			Art.box(body_art, Vector3(0, wr + shell_h * 0.5, 0), Vector3(W, shell_h, L), paint_color)
+			Art.tapered_box(body_art, Vector3(0, wr + shell_h * 0.42, -half_l * 0.64),
+				Vector3(W * 0.92, shell_h * 0.78, L * 0.38), Vector2(W * 0.64, 0.3), paint_color)
+			Art.tapered_box(body_art, Vector3(0, wr + shell_h + 0.20, 0.10),
+				Vector3(W * 0.66, 0.34, L * 0.30), Vector2(W * 0.52, 0.18), Color("151d24"))
+			Art.box(body_art, Vector3(0, wr + shell_h + 0.42, 0.48), Vector3(W * 0.60, 0.05, 0.05), Color("c8cdd2"))
+			for side in [-1.0, 1.0]:
+				Art.box(body_art, Vector3(side * W * 0.24, wr + shell_h + 0.24, 0.48), Vector3(0.05, 0.34, 0.05), Color("c8cdd2"))
+				Art.box(body_art, Vector3(side * W * 0.46, wr + shell_h + 0.52, half_l * 0.74), Vector3(0.06, 0.46, 0.12), Color("1a1f24"))
+				Art.box(body_art, Vector3(side * W * 0.48, wr + 0.20, -half_l * 0.92), Vector3(0.10, 0.04, 0.30), Color("1a1f24"))
+			Art.box(body_art, Vector3(0, wr + shell_h + 0.72, half_l * 0.72), Vector3(W * 1.0, 0.07, 0.56), Color("12171b"))
+			Art.box(body_art, Vector3(0, wr + 0.09, -half_l - 0.05), Vector3(W * 0.98, 0.07, 0.34), Color("14191e"))
+			Art.box(body_art, Vector3(0, wr + 0.20, half_l + 0.02), Vector3(W * 0.9, 0.12, 0.20), Color("14191e"))
+			_add_standard_lights(body_art, half_w * 0.78, wr + 0.30, half_l, headlights, taillights)
+			_add_four_wheels(body_art, half_w, wr, ww, half_l * 0.62, wheels)
+
 		_:
 			# Standard Sedans, Hatchbacks, SUVs, Delivery Vans
 			Art.box(body_art, Vector3(0, wr + 0.35, 0), Vector3(W, 0.6, L), paint_color)
@@ -442,7 +522,7 @@ static func _add_future_accents(parent: Node3D, vclass: int, length_m: float, wi
 			accent = Color("ffae32")
 		VehicleClass.POLICE:
 			accent = Color("3a7bff")
-		VehicleClass.SPORTS:
+		VehicleClass.SPORTS, VehicleClass.ROADSTER, VehicleClass.HYPERCAR, VehicleClass.TRACK_CAR:
 			accent = Color("ff2e88")
 		VehicleClass.BUS:
 			accent = Color("38ffc8")

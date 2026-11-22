@@ -117,6 +117,7 @@ func load_world(path: String = STAGE_B_PATH) -> bool:
 
 
 func _build() -> void:
+	_sanitize_buildings()
 	super()
 	var start := Time.get_ticks_usec()
 	var landmarks := CbdLandmarks.new()
@@ -214,6 +215,212 @@ func _build() -> void:
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 
 
+## Remove exported building rows that the geometry cannot carry: degenerate or
+## self-intersecting rings, parcels generated across a carriageway, and
+## footprints whose centroid sits in open water. Fork wedges are first widened
+## rather than deleted: a leftover block remainder can be a few decimetres wide
+## and 30-80 m long, which reads as a blade standing on the footpath. They are
+## handled here, before any mesh or collision is built.
+func _sanitize_buildings() -> void:
+	var rows: Array = data.get("buildings", [])
+	if rows.is_empty():
+		return
+	var cell_size := 40.0
+	var cells: Dictionary = {}
+	for road in data.get("roads", []):
+		if bool(road.get("tunnel", false)):
+			continue
+		var points: Array = road.get("points", [])
+		var half := float(road.get("widthM", 8.0)) * 0.5
+		for index in range(points.size() - 1):
+			var a := Vector2(float(points[index][0]), float(points[index][1]))
+			var b := Vector2(float(points[index + 1][0]), float(points[index + 1][1]))
+			var low := Vector2(minf(a.x, b.x), minf(a.y, b.y))
+			var high := Vector2(maxf(a.x, b.x), maxf(a.y, b.y))
+			for gx in range(int(floor(low.x / cell_size)), int(floor(high.x / cell_size)) + 1):
+				for gz in range(int(floor(low.y / cell_size)), int(floor(high.y / cell_size)) + 1):
+					var key := Vector2i(gx, gz)
+					if not cells.has(key):
+						cells[key] = []
+					cells[key].append([a, b, half])
+	var water: Array = data.get("water", {}).get("rings", [])
+	var water_polygons: Array[PackedVector2Array] = []
+	for water_ring in water:
+		var polygon := PackedVector2Array()
+		for point in water_ring:
+			polygon.append(Vector2(float(point[0]), float(point[1])))
+		if polygon.size() >= 3:
+			water_polygons.append(polygon)
+	var kept: Array = []
+	var removed_invalid := 0
+	var fattened := 0
+	var removed_road := 0
+	var removed_water := 0
+	var osm_count := 0
+	var generated_count := 0
+	var by_style: Dictionary = {}
+	for row in rows:
+		var ring := SydneyMesh._clean_ring(row.get("ring", []))
+		if ring.size() < 3 or Geometry2D.triangulate_polygon(ring).is_empty():
+			removed_invalid += 1
+			continue
+		# Fork wedges are triangulated from the leftover road-block remainder and
+		# can end up a few decimetres wide but 30-80 m long; at street level they
+		# read as a blade standing on the footpath. Twice area over perimeter is
+		# the average width of a convex strip, so widen anything below a usable
+		# frontage instead of deleting the parcel.
+		var is_generated := bool(row.get("generated", false))
+		var target_width := 3.4 if is_generated else 2.4
+		var original_ring := ring
+		var widened := false
+		if _ring_average_width(ring) < target_width:
+			var grown := _fatten_ring(ring, target_width, cells, cell_size)
+			if grown.size() >= 3 and not Geometry2D.triangulate_polygon(grown).is_empty():
+				ring = grown
+				row["ring"] = _ring_rows(grown)
+				widened = true
+		var centroid := Vector2.ZERO
+		for point in ring:
+			centroid += point
+		centroid /= float(ring.size())
+		var in_water := false
+		for polygon in water_polygons:
+			if Geometry2D.is_point_in_polygon(centroid, polygon):
+				in_water = true
+				break
+		if in_water:
+			removed_water += 1
+			continue
+		if is_generated and _ring_hits_carriageway(ring, cells, cell_size):
+			if widened:
+				# The widening ran out of block interior; keep the original parcel
+				# rather than delete it, then test the untouched footprint.
+				ring = original_ring
+				row["ring"] = _ring_rows(ring)
+				widened = false
+			if _ring_hits_carriageway(ring, cells, cell_size):
+				removed_road += 1
+				continue
+		if widened:
+			fattened += 1
+		kept.append(row)
+		if is_generated:
+			generated_count += 1
+		else:
+			osm_count += 1
+		var style := str(row.get("style", ""))
+		by_style[style] = int(by_style.get(style, 0)) + 1
+	data["buildings"] = kept
+	var stats: Dictionary = data.get("stats", {})
+	stats["buildings"] = kept.size()
+	stats["buildingsFromOsm"] = osm_count
+	stats["buildingsGenerated"] = generated_count
+	stats["buildingsByStyle"] = by_style
+	stats["buildingsRejectedInvalidRing"] = removed_invalid
+	stats["buildingsFattened"] = fattened
+	stats["buildingsRejectedCarriageway"] = removed_road
+	stats["buildingsRejectedWater"] = removed_water
+	if removed_invalid + fattened + removed_road + removed_water > 0:
+		print("CbdWorld: rejected %d invalid, widened %d thin, %d carriageway and %d water building rows" % [removed_invalid, fattened, removed_road, removed_water])
+
+
+func _ring_average_width(ring: PackedVector2Array) -> float:
+	var perimeter := 0.0
+	for index in ring.size():
+		perimeter += ring[index].distance_to(ring[(index + 1) % ring.size()])
+	return 2.0 * absf(_ring_area(ring)) / maxf(perimeter, 0.01)
+
+
+func _ring_rows(ring: PackedVector2Array) -> Array:
+	var rows: Array = []
+	for point in ring:
+		rows.append([point.x, point.y])
+	return rows
+
+
+func _ring_centroid(ring: PackedVector2Array) -> Vector2:
+	var centroid := Vector2.ZERO
+	for point in ring:
+		centroid += point
+	return centroid / maxf(float(ring.size()), 1.0)
+
+
+## Inflate a thin footprint to a usable average width, then slide it back toward
+## the block interior by the same amount so its road-facing edge stays put.
+## Uniform inflation widens a strip by 2 * grow and only lengthens it slightly.
+func _fatten_ring(ring: PackedVector2Array, target_width: float, cells: Dictionary, cell_size: float) -> PackedVector2Array:
+	var grow := minf((target_width - _ring_average_width(ring)) * 0.5, 4.0)
+	if grow <= 0.01:
+		return ring
+	var outlines := Geometry2D.offset_polygon(ring, grow, Geometry2D.JOIN_MITER)
+	if outlines.is_empty():
+		return ring
+	var grown: PackedVector2Array = outlines[0]
+	var grown_area := absf(_ring_area(grown))
+	for candidate in outlines:
+		var candidate_area := absf(_ring_area(candidate))
+		if candidate_area > grown_area:
+			grown = candidate
+			grown_area = candidate_area
+	if grown.size() < 3:
+		return ring
+	var away := _away_from_nearest_carriageway(ring, cells, cell_size)
+	if away.length_squared() < 0.0001:
+		return grown
+	var shifted := PackedVector2Array()
+	for point in grown:
+		shifted.append(point + away * (grow + 0.06))
+	return shifted
+
+
+## Unit vector from the nearest carriageway toward the footprint centroid, i.e.
+## the direction that moves a parcel deeper into its block.
+func _away_from_nearest_carriageway(ring: PackedVector2Array, cells: Dictionary, cell_size: float) -> Vector2:
+	var centroid := _ring_centroid(ring)
+	var cell := Vector2i(int(floor(centroid.x / cell_size)), int(floor(centroid.y / cell_size)))
+	var best := INF
+	var closest := centroid
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			for segment in cells.get(cell + Vector2i(dx, dz), []):
+				var a: Vector2 = segment[0]
+				var b: Vector2 = segment[1]
+				var point := Geometry2D.get_closest_point_to_segment(centroid, a, b)
+				var distance := centroid.distance_squared_to(point)
+				if distance < best:
+					best = distance
+					closest = point
+	var away := centroid - closest
+	if away.length_squared() < 0.0001:
+		return Vector2.ZERO
+	return away.normalized()
+
+
+func _ring_area(ring: PackedVector2Array) -> float:
+	var twice_area := 0.0
+	for index in ring.size():
+		var a := ring[index]
+		var b := ring[(index + 1) % ring.size()]
+		twice_area += a.x * b.y - b.x * a.y
+	return twice_area * 0.5
+
+
+func _ring_hits_carriageway(ring: PackedVector2Array, cells: Dictionary, cell_size: float) -> bool:
+	for point in ring:
+		var cell := Vector2i(int(floor(point.x / cell_size)), int(floor(point.y / cell_size)))
+		var best := INF
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				for segment in cells.get(cell + Vector2i(dx, dz), []):
+					var a: Vector2 = segment[0]
+					var b: Vector2 = segment[1]
+					var half: float = segment[2]
+					best = minf(best, point.distance_to(Geometry2D.get_closest_point_to_segment(point, a, b)) - half)
+		if best <= 0.02:
+			return true
+	return false
+
+
 func _index_content() -> void:
 	district_centres.clear()
 	for row in data.get("districts", []):
@@ -227,6 +434,36 @@ func _index_content() -> void:
 	viewpoints.clear()
 	for row in data.get("viewpoints", []):
 		viewpoints[str(row.get("id", ""))] = row
+	_snap_viewpoints_to_footpaths()
+
+
+## Menu spawns and the expansion test both treat viewpoints as places a person
+## can stand. Several exported points sat in the middle of a park or quay, up to
+## 28 m from the nearest walkway; move each onto the closest footpath segment.
+func _snap_viewpoints_to_footpaths() -> void:
+	var paths: Array = data.get("footpaths", [])
+	if paths.is_empty():
+		return
+	for view_id in viewpoints:
+		if view_id == "cbd_aerial":
+			continue
+		var view: Dictionary = viewpoints[view_id]
+		var origin := Vector2(float(view.get("x", 0.0)), float(view.get("z", 0.0)))
+		var best := origin
+		var best_distance := INF
+		for row in paths:
+			var points: Array = row.get("points", [])
+			for index in range(points.size() - 1):
+				var a := Vector2(float(points[index][0]), float(points[index][1]))
+				var b := Vector2(float(points[index + 1][0]), float(points[index + 1][1]))
+				var closest := Geometry2D.get_closest_point_to_segment(origin, a, b)
+				var distance := origin.distance_squared_to(closest)
+				if distance < best_distance:
+					best_distance = distance
+					best = closest
+		if best_distance < 40.0 * 40.0:
+			view["x"] = best.x
+			view["z"] = best.y
 
 
 ## Nearest exported district to a world position. Used by tests and by the
@@ -352,6 +589,15 @@ func _build_ground() -> void:
 		if ow <= 0.0 or oh <= 0.0:
 			continue
 		hole_rects.append(Rect2(float(opening["x"]) - ow * 0.5, float(opening["z"]) - oh * 0.5, ow, oh))
+	# The open rail cutting is a corridor that follows the route, not a row of
+	# axis-aligned squares: a 16 m square turned 45° opened more than 22 m
+	# across the track and left unfloored, uncollidable pockets in the street.
+	# Reserve its whole footprint here and rebuild that footprint below with a
+	# corridor-shaped opening.
+	var cut_path: Array = StationInteriorsScript.descent_cut_path()
+	var cut_rect := _descent_cut_rect(cut_path)
+	if cut_rect.size.x > 0.0:
+		hole_rects.append(cut_rect)
 	var cells := _subtract_ground_rects(base_rect, hole_rects)
 
 	var body := StaticBody3D.new()
@@ -367,6 +613,8 @@ func _build_ground() -> void:
 		body.add_child(collider)
 
 	var mat := SydneyMesh.mat(Color("53574e"))
+	if cut_rect.size.x > 0.0:
+		_build_descent_cut_ground(cut_path, cut_rect, mat)
 	for i in cells.size():
 		var rect: Rect2 = cells[i]
 		var instance := MeshInstance3D.new()
@@ -392,6 +640,115 @@ func _build_ground() -> void:
 		instance.material_override = mat
 		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.22, rect.position.y + rect.size.y * 0.5)
 		add_child(instance)
+
+
+## Bounding box reserved for the open rail cutting, with a small margin so the
+## custom corridor mesh always meets the ordinary ground cells.
+func _descent_cut_rect(path: Array) -> Rect2:
+	if path.size() < 2:
+		return Rect2()
+	var lo: Vector2 = path[0]
+	var hi: Vector2 = path[0]
+	for point: Vector2 in path:
+		lo = Vector2(minf(lo.x, point.x), minf(lo.y, point.y))
+		hi = Vector2(maxf(hi.x, point.x), maxf(hi.y, point.y))
+	var half: float = StationInteriorsScript.DESCENT_CUT_HALF_WIDTH + 2.0
+	return Rect2(lo - Vector2(half, half), hi - lo + Vector2(half * 2.0, half * 2.0))
+
+
+## Ground around a corridor-shaped rail cutting. The base slab has already had
+## `cut_rect` removed; this fills it back in as two strips that follow the route
+## centreline, leaving an opening exactly the width of the trench. Collision is
+## one concave surface at street grade so the rim is solid all the way along.
+func _build_descent_cut_ground(path: Array, cut_rect: Rect2, mat: Material) -> void:
+	var half: float = StationInteriorsScript.DESCENT_CUT_HALF_WIDTH
+	var left: Array[Vector2] = []
+	var right: Array[Vector2] = []
+	for i in path.size():
+		var point: Vector2 = path[i]
+		var before: Vector2 = path[maxi(i - 1, 0)]
+		var after: Vector2 = path[mini(i + 1, path.size() - 1)]
+		var direction := (after - before)
+		if direction.length_squared() < 0.0001:
+			direction = Vector2(0.0, 1.0)
+		direction = direction.normalized()
+		var side := Vector2(-direction.y, direction.x) * half
+		left.append(point + side)
+		right.append(point - side)
+
+	var top := -0.02
+	var faces := PackedVector3Array()
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var min_x := cut_rect.position.x
+	var max_x := cut_rect.end.x
+	var min_z := cut_rect.position.y
+	var max_z := cut_rect.end.y
+
+	# Ground beyond each end of the cut, inside the reserved footprint.
+	_emit_ground_quad(surface, faces, Vector2(min_x, min_z), Vector2(max_x, min_z),
+		Vector2(max_x, path[0].y), Vector2(min_x, path[0].y), top)
+	var last: Vector2 = path[path.size() - 1]
+	_emit_ground_quad(surface, faces, Vector2(min_x, last.y), Vector2(max_x, last.y),
+		Vector2(max_x, max_z), Vector2(min_x, max_z), top)
+
+	for i in range(path.size() - 1):
+		var z0: float = path[i].y
+		var z1: float = path[i + 1].y
+		var l0: Vector2 = left[i]
+		var l1: Vector2 = left[i + 1]
+		var r0: Vector2 = right[i]
+		var r1: Vector2 = right[i + 1]
+		_emit_ground_quad(surface, faces, Vector2(min_x, z0), l0, l1, Vector2(min_x, z1), top)
+		_emit_ground_quad(surface, faces, r0, Vector2(max_x, z0), Vector2(max_x, z1), r1, top)
+
+	var mesh := surface.commit()
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	mesh.surface_set_material(0, mat)
+	var instance := MeshInstance3D.new()
+	instance.name = "Ground_RailCut"
+	instance.mesh = mesh
+	add_child(instance)
+
+	if faces.size() >= 3:
+		var collider := CollisionShape3D.new()
+		var shape := ConcavePolygonShape3D.new()
+		shape.set_faces(faces)
+		shape.backface_collision = true
+		collider.shape = shape
+		# The visual slab's top is 2 cm below the collision plane used by the
+		# ordinary ground boxes; match it so the rim has no step.
+		collider.position = Vector3(0.0, 0.02, 0.0)
+		var body := get_node_or_null("GroundCollision") as StaticBody3D
+		if body != null:
+			body.add_child(collider)
+
+
+func _emit_ground_quad(surface: SurfaceTool, faces: PackedVector3Array,
+		a: Vector2, b: Vector2, c: Vector2, d: Vector2, y: float) -> void:
+	var pa := Vector3(a.x, y, a.y)
+	var pb := Vector3(b.x, y, b.y)
+	var pc := Vector3(c.x, y, c.y)
+	var pd := Vector3(d.x, y, d.y)
+	# Upward-facing winding for both the visual mesh and the collision surface.
+	for tri in [[pa, pc, pb], [pa, pd, pc]]:
+		var a3: Vector3 = tri[0]
+		var b3: Vector3 = tri[1]
+		var c3: Vector3 = tri[2]
+		if (b3 - a3).cross(c3 - a3).y < 0.0:
+			var swap := b3
+			b3 = c3
+			c3 = swap
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(a3)
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(b3)
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(c3)
+		faces.append(a3)
+		faces.append(b3)
+		faces.append(c3)
 
 
 func _subtract_ground_rects(base: Rect2, holes: Array[Rect2]) -> Array[Rect2]:
@@ -430,6 +787,12 @@ func _build_roads() -> void:
 	var roads := get_node_or_null("Roads") as MeshInstance3D
 	if roads != null:
 		roads.material_override = _asphalt_material(Color("2a2e32"), 0.91)
+	# Paint and kerbs are presentation over the same exported centrelines. Feet
+	# and crossings sit above (0.10 / 0.12), so the road paint goes just over the
+	# asphalt at 0.075 and the kerb rises to footpath level at 0.10.
+	var painted_roads: Array = OperaHouseLandmark.filtered_roads(data.get("roads", []), landmark_podium)
+	_add_mesh("LaneMarkings", SydneyMesh.road_markings_mesh(painted_roads, 0.075))
+	_add_mesh("Kerbs", SydneyMesh.road_kerb_mesh(painted_roads, 0.06, 0.04))
 	# Footpaths and crossings read as concrete, not the same flat strip as the
 	# carriageway. The same shader with lighter, rougher values is enough.
 	for node_name in ["Footpaths", "Crossings", "Parking"]:

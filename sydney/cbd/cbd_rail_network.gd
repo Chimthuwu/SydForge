@@ -445,6 +445,33 @@ func _emit_box(
 	_emit_face(surface, [p001, p101, p100, p000], -basis.y)
 
 
+## Continuous floor quad for the open cut. Shared vertices along the route
+## mean the strip has no seams at curve joints; the winding is forced upward for
+## both the visual surface and the collision faces.
+func _emit_floor_quad(
+	surface: SurfaceTool,
+	faces: PackedVector3Array,
+	a: Vector3, b: Vector3, c: Vector3, d: Vector3
+) -> void:
+	for tri in [[a, c, b], [a, d, c]]:
+		var p0: Vector3 = tri[0]
+		var p1: Vector3 = tri[1]
+		var p2: Vector3 = tri[2]
+		if (p1 - p0).cross(p2 - p0).y < 0.0:
+			var swap := p1
+			p1 = p2
+			p2 = swap
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(p0)
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(p1)
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(p2)
+		faces.append(p0)
+		faces.append(p1)
+		faces.append(p2)
+
+
 func _emit_face(surface: SurfaceTool, points: Array, normal: Vector3) -> void:
 	var a: Vector3 = points[0]
 	var b: Vector3 = points[1]
@@ -855,7 +882,8 @@ func _build_tunnel_enclosures() -> void:
 
 
 ## Open cut between the southern bridge approach and the first deep bore.
-## The matching ground opening is emitted by StationInteriors.openings().
+## The matching ground opening is cut by CbdWorld from
+## StationInteriors.descent_cut_path() as a corridor of the same width.
 ##
 ## Both ends are derived from the route rather than hardcoded indices: the cut
 ## starts where the track first sinks below grade after the bridge and ends at
@@ -871,6 +899,42 @@ func _build_descent_cutting() -> void:
 		return
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var parapet_surface := SurfaceTool.new()
+	parapet_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var collision_root := StaticBody3D.new()
+	collision_root.name = "RailDescentCuttingCollision"
+	add_child(collision_root)
+	var parapet_center := 6.75
+	var parapet_height := 1.2
+	# One continuous floor and one continuous collision surface. Per-segment
+	# boxes left wedge-shaped gaps on the outside of every curve at the joints;
+	# the player fell through those into the void below the city.
+	var floor_left: Array[Vector3] = []
+	var floor_right: Array[Vector3] = []
+	var floor_faces := PackedVector3Array()
+	for i in range(first, last + 1):
+		var before: Vector3 = main_route_points[maxi(i - 1, first)]
+		var after: Vector3 = main_route_points[mini(i + 1, last)]
+		var forward := after - before
+		forward.y = 0.0
+		if forward.length_squared() < 0.0001:
+			forward = Vector3.FORWARD
+		var side := Vector3.UP.cross(forward.normalized()).normalized()
+		var point: Vector3 = main_route_points[i]
+		var floor_y := point.y - 0.27
+		var centre := Vector3(point.x, floor_y, point.z)
+		floor_left.append(centre + side * 6.6)
+		floor_right.append(centre - side * 6.6)
+	for j in range(floor_left.size() - 1):
+		_emit_floor_quad(surface, floor_faces, floor_left[j], floor_left[j + 1],
+			floor_right[j + 1], floor_right[j])
+	if floor_faces.size() >= 3:
+		var floor_shape := ConcavePolygonShape3D.new()
+		floor_shape.set_faces(floor_faces)
+		floor_shape.backface_collision = true
+		var floor_collider := CollisionShape3D.new()
+		floor_collider.shape = floor_shape
+		collision_root.add_child(floor_collider)
 	for i in range(first, last):
 		var a := main_route_points[i]
 		var b := main_route_points[i + 1]
@@ -891,19 +955,32 @@ func _build_descent_cutting() -> void:
 		var center_y := (top + bottom) * 0.5
 		for side in [-1.0, 1.0]:
 			var wall_pos: Vector3 = mid + basis.x * (float(side) * 6.4) + Vector3.UP * center_y
-			_emit_box(surface, wall_pos, basis, Vector3(0.7, height, length), Vector3.UP)
-		var floor_pos := mid + Vector3.UP * (track_y - 0.42)
-		_emit_box(surface, floor_pos, basis, Vector3(13.2, 0.3, length), Vector3.UP)
+			var wall_size := Vector3(0.7, height, length + 0.4)
+			_emit_box(surface, wall_pos, basis, wall_size, Vector3.UP)
+			# Overlap collision at the joints so the outside of a curve cannot
+			# leave a wedge the player can squeeze through.
+			_add_collision_box(collision_root, wall_pos, basis, Vector3(0.7, height, length + 1.2))
+			# Street-level protection. Without it the player could simply walk
+			# off the pavement into the trench. 1.65 m total is above the jump apex.
+			var parapet_pos: Vector3 = mid + basis.x * (float(side) * parapet_center) \
+				+ Vector3.UP * (top + parapet_height * 0.5)
+			var parapet_size := Vector3(0.35, parapet_height, length + 0.4)
+			_emit_box(parapet_surface, parapet_pos, basis, parapet_size, Vector3.UP)
+			_add_collision_box(collision_root, parapet_pos, basis,
+				Vector3(0.35, parapet_height, length + 1.2))
 	_commit_mesh("RailDescentCutting", surface, Color("5a5750"), 0.97)
+	_commit_mesh("RailDescentCuttingParapet", parapet_surface, Color("8a8579"), 0.95)
 	_build_cutting_portal(first, last)
 
 
-## First route index of the southern open cut: just past the bridge, where the
-## authored descent first drops the track below grade.
+## First route index of the southern open cut: the portal where the authored
+## descent reaches street grade (the route is held at 0.15 m before this).
+## Starting deeper (the old y < -1.0 test) buried the first 40 m of the train
+## under the street slab, and left the ground opening floating past the cut.
 func _descent_cut_first_index() -> int:
 	var start := maxi(_bridge_range.y + 1, 0)
 	for i in range(start, main_route_points.size()):
-		if main_route_points[i].y < -1.0:
+		if main_route_points[i].y <= 0.15:
 			return i
 	return -1
 

@@ -54,6 +54,8 @@ static var _active_siren_voices: int = 0
 const MAX_ACTIVE_SIREN_VOICES := 3
 var audio_focus: bool = false
 var driver: BoomPlayer
+## Showcase cars use a fixed factory colour instead of the random traffic paint.
+var paint_override: Color = Color(0, 0, 0, 0)
 var vehicle_name: String = "Sydney traffic"
 var health: float = 100.0
 var max_health: float = 100.0
@@ -139,7 +141,27 @@ func _setup_vehicle() -> void:
 		Color("59485f"), Color("c4c4be"), Color("292d31"), Color("69737a")
 	]
 	var paint_col: Color = palette[randi() % palette.size()]
-	if vehicle_class == VehicleVisualBuilder.VehicleClass.TAXI:
+	# Exotics wear vivid factory colours; the muted commuter palette made the
+	# old sports cars read as ordinary sedans at a distance.
+	var performance_classes := [
+		VehicleVisualBuilder.VehicleClass.SPORTS,
+		VehicleVisualBuilder.VehicleClass.SUPERCAR,
+		VehicleVisualBuilder.VehicleClass.MUSCLE,
+		VehicleVisualBuilder.VehicleClass.PERFORMANCE_SEDAN,
+		VehicleVisualBuilder.VehicleClass.COUPE,
+		VehicleVisualBuilder.VehicleClass.ROADSTER,
+		VehicleVisualBuilder.VehicleClass.HYPERCAR,
+		VehicleVisualBuilder.VehicleClass.TRACK_CAR,
+	]
+	var performance_palette := [
+		Color("e63946"), Color("ff7a1a"), Color("ffd23f"), Color("2ec4b6"),
+		Color("3a86ff"), Color("b5179e"), Color("f1f1f1"), Color("14161a")
+	]
+	if paint_override.a > 0.0:
+		paint_col = paint_override
+	elif vehicle_class in performance_classes:
+		paint_col = performance_palette[randi() % performance_palette.size()]
+	elif vehicle_class == VehicleVisualBuilder.VehicleClass.TAXI:
 		paint_col = Color("d8a21e")
 	elif vehicle_class == VehicleVisualBuilder.VehicleClass.BUS:
 		paint_col = Color("24527c")

@@ -209,7 +209,12 @@ func run() -> void:
 	check(world.get_node_or_null("Footpaths") != null, "footpath mesh node created")
 	check(world.get_node_or_null("Buildings") != null, "CBD building mesh created")
 	check(world.get_node_or_null("BuildingCollision") != null, "building collision created")
-	check(world.get_node_or_null("WaterCollision") != null, "shoreline collision created")
+	# HarbourWater supersedes the Stage A barrier: the inherited WaterCollision
+	# body is freed and HarbourWaterCollision becomes the shoreline collider.
+	var shoreline_collision: Node = world.find_child("HarbourWaterCollision", true, false)
+	if shoreline_collision == null:
+		shoreline_collision = world.get_node_or_null("WaterCollision")
+	check(shoreline_collision != null, "shoreline collision created")
 	check(world.get_node_or_null("Vegetation") != null, "park and street vegetation created")
 	check(world.get_node_or_null("OperaHouse") != null, "Opera House landmark still built")
 	check(world.get_node_or_null("HarbourBridge") != null, "Harbour Bridge still built")

@@ -20,6 +20,8 @@ const TREE_SPACING := 11.5
 const TREE_JITTER := 4.2
 const STREET_TREE_SPACING := 19.0
 const STREET_TREE_OFFSET := 2.1
+const STREET_TREE_ROAD_CELL := 64.0
+const STREET_TREE_ROAD_CLEARANCE := 0.4
 const MAX_PARK_TREES := 7200
 const MAX_STREET_TREES := 2600
 const FOLIAGE_SHADER := preload("res://shaders/foliage.gdshader")
@@ -157,6 +159,11 @@ func _near_landmark(point: Vector2) -> bool:
 func _street_trees(roads: Array) -> Array[Vector3]:
 	var points: Array[Vector3] = []
 	var avenues := ["arterial_major", "arterial", "collector"]
+	# Broadway (and other dual carriageways) is exported as two overlapping
+	# 22 m one-way ribbons, so a tree offset 2 m beyond one carriageway lands in
+	# the middle of the other. Test every candidate against all carriageways and
+	# keep only the ones that really are on the footpath.
+	var carriageways := _carriageway_index(roads)
 	for road in roads:
 		if bool(road.get("tunnel", false)):
 			continue
@@ -183,10 +190,59 @@ func _street_trees(roads: Array) -> Array[Vector3]:
 					return points
 				var base := a + direction.normalized() * travel
 				var side := 1.0 if int(absf(travel + a.x)) % 2 == 0 else -1.0
-				points.append(Vector3(base.x + normal.x * half * side, 0.05, base.y + normal.y * half * side))
+				var point := base + normal * half * side
+				if not _on_carriageway(point, str(road.get("id", "")), carriageways):
+					points.append(Vector3(point.x, 0.05, point.y))
 				travel += STREET_TREE_SPACING
 			offset = maxf(0.0, travel - direction.length())
 	return points
+
+
+## Spatial hash of carriageway segments. Each entry is [a, b, half_width, road_id]
+## in the same world XZ plane as the roads. Segments are filed into every cell
+## their padded footprint touches, so a point only needs its own cell.
+func _carriageway_index(roads: Array) -> Dictionary:
+	var cells: Dictionary = {}
+	for road in roads:
+		if bool(road.get("tunnel", false)):
+			continue
+		var path: Array = road.get("points", [])
+		var id := str(road.get("id", ""))
+		var half := float(road.get("widthM", 8.0)) * 0.5 + STREET_TREE_ROAD_CLEARANCE
+		for index in range(path.size() - 1):
+			var a := Vector2(float(path[index][0]), float(path[index][1]))
+			var b := Vector2(float(path[index + 1][0]), float(path[index + 1][1]))
+			if a.distance_squared_to(b) < 0.25:
+				continue
+			var entry := [a, b, half, id]
+			var x0 := int(floor((minf(a.x, b.x) - half) / STREET_TREE_ROAD_CELL))
+			var x1 := int(floor((maxf(a.x, b.x) + half) / STREET_TREE_ROAD_CELL))
+			var z0 := int(floor((minf(a.y, b.y) - half) / STREET_TREE_ROAD_CELL))
+			var z1 := int(floor((maxf(a.y, b.y) + half) / STREET_TREE_ROAD_CELL))
+			for cx in range(x0, x1 + 1):
+				for cz in range(z0, z1 + 1):
+					var key := Vector2i(cx, cz)
+					if not cells.has(key):
+						cells[key] = []
+					cells[key].append(entry)
+	return cells
+
+
+func _on_carriageway(point: Vector2, source_id: String, cells: Dictionary) -> bool:
+	var key := Vector2i(
+		int(floor(point.x / STREET_TREE_ROAD_CELL)),
+		int(floor(point.y / STREET_TREE_ROAD_CELL)))
+	for entry: Array in cells.get(key, []):
+		if str(entry[3]) == source_id:
+			continue
+		var a: Vector2 = entry[0]
+		var b: Vector2 = entry[1]
+		var ab := b - a
+		var length_sq := ab.length_squared()
+		var t := 0.0 if length_sq <= 0.0001 else clampf((point - a).dot(ab) / length_sq, 0.0, 1.0)
+		if point.distance_to(a + ab * t) < float(entry[2]):
+			return true
+	return false
 
 
 func _trunk_mesh() -> Mesh:

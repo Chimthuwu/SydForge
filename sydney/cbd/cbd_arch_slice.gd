@@ -23,7 +23,9 @@ const FAM_STONE := 0.55
 const FAM_METAL := 0.75
 const FAM_CONCRETE := 0.95
 
-const CORPORATE_GLASS := Color("1b2f38")
+## Backing/window tint. architecture.gdshader multiplies glass by 0.48, so the
+## raw shell colour would read as a black hole; this keeps the glazing legible.
+const GLAZING := Color("466b7c")
 const CORPORATE_WALL := Color("2c3941")
 const RETAIL_STONE := Color("6a5c49")
 const BRICK_WALL := Color("54362a")
@@ -54,18 +56,14 @@ func build(world_data: Dictionary) -> void:
 		c /= ring.size()
 		var height := clampf(float(row.get("heightM", 10.0)), 8.0, 240.0)
 		var detailed := SLICE_RECT.has_point(c)
-		# Tiered rollout: full detail for the reviewed slice, simplified facade
-		# for taller buildings elsewhere. Low-rise suburbs keep the cheap shell.
-		if not detailed and height < 38.0:
+		# Only the reviewed slice gets added geometry. The earlier city-wide
+		# "simple facade" tier stood dark bars and floor bands proud of the flat
+		# legacy shell with no glazing behind them, which is exactly the reported
+		# scaffolding-wrapped-building look. Elsewhere the facade shader's own
+		# aligned windows and mullions remain the surface treatment.
+		if not detailed:
 			continue
 		var style := str(row.get("style", "stone-commercial"))
-		# Outside the reviewed slice only glazed towers get the merged structural
-		# frame. Running full-height dark piers and floor bands over a masonry
-		# shell produced the reported "scaffolding wrapped around a building"
-		# look: the bars stand proud of a flat textured wall with no glazing
-		# depth behind them. Masonry keeps the shell's own facade treatment.
-		if not detailed and style != "glass-tower":
-			continue
 		var id := str(row.get("id", ""))
 		if id.is_empty() or _upgraded.has(id):
 			continue
@@ -144,14 +142,18 @@ func _emit_building(surface: SurfaceTool, ring: PackedVector2Array, height: floa
 	# Wall base colour chosen per family; alpha tags the shader material type.
 	var wall := CORPORATE_WALL if is_tower else (RETAIL_STONE if is_retail else BRICK_WALL)
 	wall.a = FAM_CONCRETE if is_brick else FAM_STONE
-	var glass := CORPORATE_GLASS
+	var glass := GLAZING
 	glass.a = FAM_GLASS
 	var frame := FRAME_METAL.darkened(0.18)
 	frame.a = FAM_FRAME
 
 	# 1. Opaque backing panels sit just outside the legacy shell. They hide the
 	#    old flat facade shader in this block so the new architecture reads as a
-	#    complete designed building, not decoration over an old grid.
+	#    complete designed building, not decoration over an old grid. Towers get
+	#    glazing behind their mullions; masonry keeps its wall tone and gains
+	#    real window glass in _emit_masonry_facade.
+	var backing := glass if is_tower else wall
+	total += _emit_backing(surface, ring, height, backing)
 
 	# 2. Per-edge facade systems: piers, floor bands, recessed glazing bays.
 	var floors := clampi(int(height / STOREY), 2, 56)
@@ -313,6 +315,8 @@ func _emit_masonry_facade(surface: SurfaceTool, a: Vector2, b: Vector2, tangent:
 	var win_w := minf(1.2, length / float(windows) * 0.52)
 	var n := Vector3(outward.x, 0.0, outward.y)
 	var offset := 0.09
+	var glass := GLAZING
+	glass.a = FAM_GLASS
 	var rng := RandomNumberGenerator.new()
 	rng.seed = variant * 613 + 11
 
@@ -325,8 +329,11 @@ func _emit_masonry_facade(surface: SurfaceTool, a: Vector2, b: Vector2, tangent:
 			var gx := p.x
 			var gz := p.y
 			var frame_c := frame.lightened(0.12) if heritage else frame
-			# Sill and head frame the existing window; the window itself stays
-			# lit by the facade shader — real depth, edge-aligned.
+			# The opaque backing hides the old facade shader, so emit the glazing
+			# itself behind the sill/head frames instead of letting the legacy
+			# procedural window grid show through the structural layer.
+			var wc := p - outward * offset + outward * 0.075
+			total += _fquad(surface, Vector3(wc.x, y0 + 0.75, wc.y), tangent, outward, win_w, 1.42, glass)
 			total += _fquad(surface, Vector3(gx, y0 - 0.06, gz), tangent, outward, win_w + 0.30, 0.14, frame_c)
 			total += _fquad(surface, Vector3(gx, y0 + 1.52, gz), tangent, outward, win_w + 0.24, 0.14, frame_c)
 	return total

@@ -100,12 +100,16 @@ var stats: Dictionary = {}
 
 
 ## Plan of the southern open rail cutting, sampled every second route index
-## between the descent start (-33 m) and the first enclosed bore segment.
-## The cut curves ~52 m across XZ, so a single axis-aligned rectangle either
-## misses the ends or opens a crater far wider than the trench. These samples
-## follow the trench; `tests/cbd_rail_network_test.gd` re-derives them from the
-## live route and fails if the corridor drifts away from its opening.
+## between the descent start and the first enclosed bore segment. The cut
+## curves ~52 m across XZ, so axis-aligned rectangles either miss the ends or
+## open a crater far wider than the trench (a 16 m square rotated 45° covers
+## more than 22 m across the track). CbdWorld therefore cuts the ground with
+## this centreline instead of subtracting squares from the slab.
 const DESCENT_CUT_POINTS := [
+	# From the portal where the route leaves street grade (index 248) so the
+	# ground opening starts with the dive instead of burying 40 m of train.
+	Vector2(-195.67, -1443.25), Vector2(-199.04, -1429.25),
+	Vector2(-201.88, -1418.08), Vector2(-204.80, -1408.38),
 	Vector2(-206.56, -1402.84), Vector2(-210.14, -1392.09),
 	Vector2(-213.79, -1381.65), Vector2(-218.54, -1369.02),
 	Vector2(-223.28, -1356.38), Vector2(-228.03, -1343.75),
@@ -124,11 +128,20 @@ const DESCENT_CUT_POINTS := [
 	Vector2(-238.63, -1017.60), Vector2(-237.22, -1003.29),
 	Vector2(-235.92, -990.41), Vector2(-234.69, -978.39),
 	Vector2(-233.54, -967.22), Vector2(-232.06, -954.41),
+	# The route's next point is the first enclosed bore segment (z = -948.01).
+	Vector2(-231.32, -948.01),
 ]
-## Opening size per sample. The cutting walls stand 6.4 m either side of the
-## centreline and samples are ~12 m apart, so 16 m keeps a small ledge while
-## leaving no unbroken ground bridging consecutive samples.
-const DESCENT_CUT_OPENING := 16.0
+## Ground opening half-width. The cutting's retaining walls stand 6.4 m either
+## side of the centreline and are 0.7 m thick (outer face 6.75 m). The ground
+## edge overlaps their top at 6.6 m, so there is no unsupported ledge to fall
+## through beside the trench.
+const DESCENT_CUT_HALF_WIDTH := 6.6
+
+
+## Centreline of the open rail cutting in world XZ. CbdWorld uses this to cut
+## a corridor-shaped opening (not one square per sample).
+static func descent_cut_path() -> Array:
+	return DESCENT_CUT_POINTS.duplicate()
 
 
 static func openings() -> Array:
@@ -143,15 +156,9 @@ static func openings() -> Array:
 		var cw: float = float(spec.get("concourse", Vector2(24, 14)).x) + 4.0
 		var ch: float = float(spec.get("concourse", Vector2(24, 14)).y) + 10.0
 		result.append({"id": spec["id"], "x": cx, "z": cz, "w": cw, "h": ch})
-	# The southern bridge descent is an open cut before it becomes a bore.
-	# Without an opening the train is rendered inside an unbroken ground slab.
-	for index in DESCENT_CUT_POINTS.size():
-		var point: Vector2 = DESCENT_CUT_POINTS[index]
-		result.append({
-			"id": "bridge_descent_cut_%02d" % index,
-			"x": point.x, "z": point.y,
-			"w": DESCENT_CUT_OPENING, "h": DESCENT_CUT_OPENING,
-		})
+	# The southern bridge descent is cut separately, as a corridor that follows
+	# the route: `descent_cut_path` / `DESCENT_CUT_HALF_WIDTH`. Adding it here as
+	# axis-aligned rectangles produced the reported hole in the street.
 	return result
 
 

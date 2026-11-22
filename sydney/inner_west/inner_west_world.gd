@@ -333,14 +333,16 @@ func _build_roads_and_rail() -> void:
 		for index in rail_paths.size():
 			widths.append(3.6)
 		_add_mesh("RailBallast", InnerWestMesh.draped_paths(height_grid, rail_paths, widths, 0.09, Color("4a4741"), rail_ys))
-		var left_widths: Array = []
-		for index in left_rails.size():
-			left_widths.append(0.16)
-		var right_widths: Array = []
-		for index in right_rails.size():
-			right_widths.append(0.16)
-		var rail_ys_arr: Array = []
-		_add_mesh("Rails", InnerWestMesh.draped_paths(height_grid, [left_rails, right_rails], [left_widths, right_widths], 0.16, Color("8d949c"), rail_ys_arr))
+		# draped_paths expects a flat list of paths and one width per path. The
+		# old nested arrays passed Arrays to float(), aborting the whole Inner
+		# West build before the rails were created.
+		var side_paths: Array = []
+		side_paths.append_array(left_rails)
+		side_paths.append_array(right_rails)
+		var side_widths: Array = []
+		for index in side_paths.size():
+			side_widths.append(0.16)
+		_add_mesh("Rails", InnerWestMesh.draped_paths(height_grid, side_paths, side_widths, 0.16, Color("8d949c")))
 
 
 func _rail_line(path: Array, ys: PackedFloat32Array, offset: float) -> Array:

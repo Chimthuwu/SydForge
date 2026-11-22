@@ -33,8 +33,38 @@ const AmbientEventDirectorScript := preload("res://sydney/ecosystem/ambient_even
 const EmergencyIncidentManagerScript := preload("res://sydney/ecosystem/emergency_incident_manager.gd")
 const AmbientAudioDirectorScript := preload("res://sydney/ecosystem/ambient_audio_director.gd")
 const WorldSimulationDirectorScript := preload("res://sydney/ecosystem/world_simulation_director.gd")
+const MainMenuScript := preload("res://scripts/main_menu.gd")
+const VehicleTrafficControllerScript := preload("res://sydney/ecosystem/vehicle_traffic_controller.gd")
+const VehicleVisualBuilderScript := preload("res://sydney/ecosystem/vehicle_visual_builder.gd")
 
 const BRIDGE_OPERA_XZ := Vector2(658.72, -1763.81)
+
+## Menu spawn ids mapped to exported viewpoints. The bridge keeps its canonical
+## sports-car opening; every other choice drops the player on a walkable road
+## point with its authored heading.
+const MENU_VIEWPOINTS := {
+	"central": "central",
+	"town_hall": "town_hall",
+	"circular_quay": "circular_quay",
+	"the_rocks": "the_rocks",
+	"barangaroo": "barangaroo",
+}
+const MENU_MESSAGES := {
+	"central": "CENTRAL STATION · George Street and Railway Square",
+	"town_hall": "TOWN HALL · George Street civic centre",
+	"circular_quay": "CIRCULAR QUAY · ferries, promenade and the Opera House",
+	"the_rocks": "THE ROCKS · historic waterfront lanes",
+	"barangaroo": "BARANGAROO · waterfront towers and the reserve",
+}
+
+## Exotics parked at landmark kerbs so they can be found on foot instead of
+## waiting for one to drive past. Each sits at the nearest kerb lane to the
+## named menu viewpoint, facing along the road.
+const SHOWCASE_CARS := [
+	{"id": "ParkedRoadster", "viewpoint": "central", "class": VehicleVisualBuilderScript.VehicleClass.ROADSTER, "paint": Color("ffd23f")},
+	{"id": "ParkedHypercar", "viewpoint": "circular_quay", "class": VehicleVisualBuilderScript.VehicleClass.HYPERCAR, "paint": Color("2ec4b6")},
+	{"id": "ParkedTrackCar", "viewpoint": "the_rocks", "class": VehicleVisualBuilderScript.VehicleClass.TRACK_CAR, "paint": Color("b5179e")},
+]
 
 var cbd_world
 var world_sim
@@ -175,6 +205,148 @@ func _ready() -> void:
 	var time_mgr := get_node_or_null("WorldTimeManager")
 	if time_mgr != null:
 		time_mgr.set_time(11.0)
+	_maybe_show_main_menu()
+
+
+## The opening menu is part of the playable entry point only. Test suites,
+## headless runs and the `--script` capture tools keep their canonical defaults.
+func _maybe_show_main_menu() -> void:
+	await get_tree().process_frame
+	if not _menu_allowed():
+		return
+	var menu: CanvasLayer = MainMenuScript.new()
+	menu.name = "MainMenu"
+	add_child(menu)
+	menu.connect("start_requested", Callable(self, "_on_menu_start"))
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _menu_allowed() -> bool:
+	var forced := OS.get_environment("SPLOOGE_MENU")
+	if forced == "0":
+		return false
+	if forced == "1":
+		return true
+	if DisplayServer.get_name() == "headless":
+		return false
+	# Tools that instantiate main.tscn under a custom SceneTree script leave
+	# `current_scene` empty; only the real game presents the menu.
+	return get_tree().current_scene == self
+
+
+func _on_menu_start(hours: float, spawn_id: String) -> void:
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	var menu := get_node_or_null("MainMenu")
+	if menu != null:
+		menu.queue_free()
+	var time_mgr := get_node_or_null("WorldTimeManager")
+	if time_mgr != null:
+		time_mgr.set_time(hours)
+	if spawn_id == "bridge":
+		message = "SYDNEY HARBOUR BRIDGE · drive into the city"
+		return
+	_spawn_at_viewpoint(spawn_id)
+
+
+func _spawn_at_viewpoint(spawn_id: String) -> void:
+	if cbd_world == null or player == null:
+		return
+	var viewpoint_id: String = str(MENU_VIEWPOINTS.get(spawn_id, ""))
+	var viewpoint: Dictionary = cbd_world.viewpoints.get(viewpoint_id, {})
+	if viewpoint.is_empty():
+		push_warning("Main menu: no viewpoint for spawn '%s'" % spawn_id)
+		return
+	var spawn := Vector3(float(viewpoint.get("x", 0.0)), 0.3, float(viewpoint.get("z", 0.0)))
+	player.spawn = spawn
+	player.respawn()
+	if rig != null:
+		rig.yaw = float(viewpoint.get("yawRad", 0.0))
+		rig.pitch = clampf(float(viewpoint.get("pitch", -0.04)), -1.2, 1.2)
+	message = str(MENU_MESSAGES.get(spawn_id, "SYDNEY"))
+
+
+## Park the three new performance cars at fixed kerb spots near landmark spawns.
+## Positions derive from the exported road network (never hard-coded metres), so
+## they stay on the carriageway if the city data is ever re-spliced.
+func _park_showcase_cars() -> void:
+	if cbd_world == null:
+		return
+	var traffic := get_node_or_null("TrafficManager")
+	if traffic == null or traffic.road_data.is_empty():
+		return
+	var parked_positions: Array[Vector3] = []
+	for entry: Dictionary in SHOWCASE_CARS:
+		var view: Dictionary = cbd_world.viewpoints.get(str(entry["viewpoint"]), {})
+		if view.is_empty():
+			push_warning("Showcase car: no viewpoint '%s'" % entry["viewpoint"])
+			continue
+		var anchor := Vector2(float(view.get("x", 0.0)), float(view.get("z", 0.0)))
+		var best_road: Dictionary = {}
+		var best_point := Vector2.ZERO
+		var best_index := 0
+		var best_distance := INF
+		for road: Dictionary in traffic.road_data:
+			# Kerbside parking must be on a real carriageway, not the pedestrian
+			# way that often happens to be closest to a landmark viewpoint.
+			if str(road.get("highway", "")) in ["service", "pedestrian", "footway", "path", "cycleway", "steps", "track"]:
+				continue
+			if float(road.get("width", 8.0)) < 7.0:
+				continue
+			var points: Array = road.get("points", [])
+			for index in range(points.size() - 1):
+				var a: Vector3 = points[index]
+				var b: Vector3 = points[index + 1]
+				var closest := Geometry2D.get_closest_point_to_segment(anchor, Vector2(a.x, a.z), Vector2(b.x, b.z))
+				var distance := anchor.distance_squared_to(closest)
+				if distance < best_distance:
+					best_distance = distance
+					best_point = closest
+					best_road = road
+					best_index = index
+		if best_road.is_empty():
+			continue
+		var points: Array = best_road.get("points", [])
+		var a: Vector3 = points[best_index]
+		var b: Vector3 = points[best_index + 1]
+		var forward := Vector3(b.x - a.x, 0.0, b.z - a.z)
+		if forward.length_squared() < 0.0001:
+			continue
+		forward = forward.normalized()
+		# Kerb lane on the near side of the road: offset from the centreline
+		# toward the viewpoint, but never into the footpath.
+		var left := Vector3(forward.z, 0.0, -forward.x)
+		var to_view := Vector3(anchor.x - best_point.x, 0.0, anchor.y - best_point.y)
+		var side := 1.0 if left.dot(to_view) >= 0.0 else -1.0
+		# Kerb lane, not the middle of a 22 m one-way ribbon: sit roughly 2.4 m
+		# inside the kerb, with 1.6 m as the narrow-street minimum.
+		var lane_offset := maxf(1.6, float(best_road.get("width", 8.0)) * 0.5 - 2.4)
+		# Pull the car a short way along the kerb so it does not sit under the
+		# spawn's signage and read as a prop.
+		var segment_length := Vector2(b.x - a.x, b.z - a.z).length()
+		var along := minf(12.0, segment_length * 0.5)
+		var base := best_point + Vector2(forward.x, forward.z) * along
+		var parked := Vector3(base.x, 0.25, base.y) + left * side * lane_offset
+		var crowded := false
+		for other in parked_positions:
+			if parked.distance_to(other) < 8.0:
+				crowded = true
+				break
+		if crowded:
+			continue
+		var car = VehicleTrafficControllerScript.new()
+		car.name = str(entry["id"])
+		car.vehicle_class = int(entry["class"])
+		car.paint_override = entry["paint"]
+		add_child(car)
+		car.global_position = parked
+		car.rotation.y = atan2(-forward.x, -forward.z)
+		car.add_to_group("showcase_vehicles")
+		parked_positions.append(parked)
+		print("Showcase %s parked on %s (%.1f m) at %.1f, %.1f" % [
+			entry["id"], str(best_road.get("name", "")), float(best_road.get("width", 8.0)),
+			parked.x, parked.z])
 
 
 func _initialize_living_ecosystem() -> void:
@@ -194,6 +366,7 @@ func _initialize_living_ecosystem() -> void:
 	traffic_mgr.name = "TrafficManager"
 	add_child(traffic_mgr)
 	traffic_mgr.setup(cbd_world, player)
+	_park_showcase_cars()
 	
 	# 4. Pedestrian Population Manager (footpaths, promenades, crossings)
 	var ped_mgr = PedestrianManagerScript.new()

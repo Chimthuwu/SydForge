@@ -281,6 +281,144 @@ static func road_mesh(roads: Array, junctions: Array, y: float, color: Color) ->
 	return mesh
 
 
+# ------------------------------------------------------ lane paint & kerbs --
+## Pedestrian ways and service lanes stay plain; every vehicle street at least
+## 9 m wide gets lane paint so the carriageway reads from street level.
+const UNMARKED_HIGHWAYS := ["service", "pedestrian", "footway", "path", "cycleway", "steps"]
+
+
+static func road_markings_mesh(roads: Array, y: float) -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seen: Dictionary = {}
+	for road in roads:
+		if bool(road.get("tunnel", false)):
+			continue
+		var width := float(road.get("widthM", 8.0))
+		if width < 9.0 or str(road.get("highway", "")) in UNMARKED_HIGHWAYS:
+			continue
+		var points := _clean_path_points(road.get("points", []))
+		if points.size() < 2:
+			continue
+		# Broadway and Parramatta Road are exported as overlapping carriageway
+		# ribbons; paint the same centreline once or the dashes z-fight.
+		var key := _path_key(points, width)
+		if seen.has(key):
+			continue
+		seen[key] = true
+		_add_lane_markings(surface, points, width, y)
+	var mesh := surface.commit()
+	if mesh != null and mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, mat(Color("d9d6c7")))
+	return mesh
+
+
+static func road_kerb_mesh(roads: Array, road_y: float, height: float) -> ArrayMesh:
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seen: Dictionary = {}
+	for road in roads:
+		if bool(road.get("tunnel", false)):
+			continue
+		var width := float(road.get("widthM", 8.0))
+		if width < 6.0:
+			continue
+		var points := _clean_path_points(road.get("points", []))
+		if points.size() < 2:
+			continue
+		var key := _path_key(points, width)
+		if seen.has(key):
+			continue
+		seen[key] = true
+		_add_kerbs(surface, points, width, road_y, height)
+	var mesh := surface.commit()
+	if mesh != null and mesh.get_surface_count() > 0:
+		mesh.surface_set_material(0, mat(Color("918d80")))
+	return mesh
+
+
+static func _path_key(points: Array, width: float) -> String:
+	var first: Vector2 = points[0]
+	var last: Vector2 = points[-1]
+	var forward := "%d:%d:%d:%d:%d" % [roundi(first.x), roundi(first.y), roundi(last.x), roundi(last.y), points.size()]
+	var backward := "%d:%d:%d:%d:%d" % [roundi(last.x), roundi(last.y), roundi(first.x), roundi(first.y), points.size()]
+	return "%s:%.1f" % [forward if forward < backward else backward, width]
+
+
+static func _add_lane_markings(surface: SurfaceTool, points: Array, width: float, y: float) -> void:
+	var half := width * 0.5
+	var lanes := clampi(int(round(width / 3.4)), 2, 7)
+	var lane_width := width / float(lanes)
+	for lane in range(1, lanes):
+		_add_dashed_offset(surface, points, -half + lane_width * float(lane), 0.055, y)
+	for side in [-1.0, 1.0]:
+		_add_solid_offset(surface, points, side * (half - 0.5), 0.06, y)
+
+
+static func _add_solid_offset(surface: SurfaceTool, points: Array, offset: float, half_width: float, y: float) -> void:
+	for index in range(points.size() - 1):
+		var a: Vector2 = points[index]
+		var b: Vector2 = points[index + 1]
+		var direction := b - a
+		if direction.length() < 0.01:
+			continue
+		var normal := _perp(direction.normalized())
+		_add_ribbon_quad(surface, a + normal * offset, b + normal * offset, normal, normal, half_width, y)
+
+
+static func _add_dashed_offset(surface: SurfaceTool, points: Array, offset: float, half_width: float, y: float) -> void:
+	const DASH := 2.6
+	const GAP := 3.6
+	for index in range(points.size() - 1):
+		var a: Vector2 = points[index]
+		var b: Vector2 = points[index + 1]
+		var direction := b - a
+		var length := direction.length()
+		if length < 0.01:
+			continue
+		direction /= length
+		var normal := _perp(direction)
+		var travelled := 0.0
+		while travelled < length:
+			var remaining := minf(travelled + DASH, length)
+			var start := a + direction * travelled + normal * offset
+			var end := a + direction * remaining + normal * offset
+			_add_ribbon_quad(surface, start, end, normal, normal, half_width, y)
+			travelled += DASH + GAP
+
+
+static func _add_kerbs(surface: SurfaceTool, points: Array, width: float, road_y: float, height: float) -> void:
+	var half := width * 0.5
+	var inner := half - 0.55
+	var top := road_y + height
+	for index in range(points.size() - 1):
+		var a: Vector2 = points[index]
+		var b: Vector2 = points[index + 1]
+		var direction := b - a
+		if direction.length() < 0.01:
+			continue
+		var normal := _perp(direction.normalized())
+		for side: float in [1.0, -1.0]:
+			var outward: Vector2 = normal * side
+			var inner_a: Vector2 = a + outward * inner
+			var inner_b: Vector2 = b + outward * inner
+			var outer_a: Vector2 = a + outward * half
+			var outer_b: Vector2 = b + outward * half
+			var face_normal := Vector3(outward.x, 0.0, outward.y)
+			_add_triangle(surface,
+				Vector3(inner_a.x, top, inner_a.y), Vector3(inner_b.x, top, inner_b.y),
+				Vector3(outer_b.x, top, outer_b.y), Vector3.UP, Color.WHITE)
+			_add_triangle(surface,
+				Vector3(inner_a.x, top, inner_a.y), Vector3(outer_b.x, top, outer_b.y),
+				Vector3(outer_a.x, top, outer_a.y), Vector3.UP, Color.WHITE)
+			_add_triangle(surface,
+				Vector3(outer_a.x, top, outer_a.y), Vector3(outer_b.x, top, outer_b.y),
+				Vector3(outer_b.x, road_y, outer_b.y), face_normal, Color.WHITE)
+			_add_triangle(surface,
+				Vector3(outer_a.x, top, outer_a.y), Vector3(outer_b.x, road_y, outer_b.y),
+				Vector3(outer_a.x, road_y, outer_a.y), face_normal, Color.WHITE)
+
+
 static func tunnel_road_surface_mesh(roads: Array, y: float, color: Color) -> ArrayMesh:
 	## Renders tunnel-tagged roads as drivable/visible ribbons at tunnel depth.
 	## This is authored 3D presentation for data that was previously retained but

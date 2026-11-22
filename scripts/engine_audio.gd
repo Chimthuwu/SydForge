@@ -327,7 +327,7 @@ func _fade_to(target_db: float, rate: float) -> void:
 
 static func profile_for_class(vehicle_class: int) -> String:
 	match vehicle_class:
-		1:
+		1, 16, 17, 18, 19, 20, 21, 22:
 			return "sports"
 		3:
 			return "suv"

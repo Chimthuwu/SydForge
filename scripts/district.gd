@@ -105,6 +105,11 @@ var cross: Label
 var hit_time: float = 0.0
 var reload_bar: ProgressBar
 var health_bar: ProgressBar
+var hull_bar: ProgressBar
+var health_label: Label
+var vehicle_label: Label
+var speed_unit: Label
+var weapon_label: Label
 var minimap: MiniMap
 var wanted_label: Label
 var sydney_world: SydneyWorld
@@ -223,7 +228,7 @@ func interact() -> void:
 	find_nearest_vehicle()
 	if nearest != null:
 		var wanted := get_node_or_null("WantedSystem")
-		if nearest.is_in_group("traffic_vehicles") and wanted != null:
+		if nearest.is_in_group("traffic_vehicles") and not nearest.is_in_group("showcase_vehicles") and wanted != null:
 			wanted.add_crime(8.0, "GRAND THEFT AUTO · police alerted")
 		nearest.call("enter", player)
 		return
@@ -285,33 +290,57 @@ func _process(dt: float) -> void:
 	reload_bar.visible = current_reload > 0.0 and player.vehicle == null
 	reload_bar.value = (1.0-current_reload/reload_duration)*100.0
 	flash.color.a = hurt_flash*0.8
-	_set_label_text(hud, "HEALTH  %03d     /     REP  %03d\n%s   %s" % [
-		player.health,player.kills*100+player.bonus_reputation,
-		player.weapon_status_text(),"RELOADING…" if current_reload > 0.0 else ""])
+	_set_label_text(hud, "REP  %03d" % (player.kills*100+player.bonus_reputation))
+	_set_label_text(health_label, "%03d" % int(round(player.health)))
 	health_bar.value = clampf(player.health,0.0,100.0)
-	health_bar.modulate = Color("e65a54") if player.health < 30 else Color("d5b45e")
+	health_bar.modulate = Color("e65a54") if player.health < 30 else Color("ffcb52")
 	var hint_text := ""
 	if player.vehicle != null:
 		var car := player.vehicle
 		var max_health := maxf(float(car.get("max_health")),1.0)
-		_set_label_text(status, "%s   /   %03d KM/H   /   HULL %d%%" % [
-			car.get("vehicle_name"),absf(float(car.get("speed")))*3.6,
-			float(car.get("health"))/max_health*100])
-		hint_text = "W S accelerate/reverse · A D steer · SPACE brake · SHIFT NOS boost · E exit"
+		vehicle_label.visible = true
+		status.visible = true
+		speed_unit.visible = true
+		hull_bar.visible = true
+		weapon_label.visible = false
+		_set_label_text(vehicle_label, str(car.get("vehicle_name")).to_upper())
+		_set_label_text(status, "%d" % int(round(absf(float(car.get("speed")))*3.6)))
+		hull_bar.value = clampf(float(car.get("health"))/max_health*100.0,0.0,100.0)
 	else:
-		_set_label_text(status, message)
+		vehicle_label.visible = false
+		status.visible = false
+		speed_unit.visible = false
+		hull_bar.visible = false
+		weapon_label.visible = true
+		_set_label_text(weapon_label, player.weapon_status_text())
 		if player.in_supermarket != null:
-			hint_text = "E near shelf: SHOPLIFT · E at the marked door: LEAVE · G near a pump: HUFF PETROL"
+			hint_text = "E  SHOPLIFT      G  HUFF PETROL"
 		elif nearest != null:
-			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") else "DRIVE"
-			hint_text = "[ E ]  %s %s" % [action,nearest.get("vehicle_name")]
-		else:
-			hint_text = "WASD move · SPACE double jump · SHIFT sprint · F torch · RMB aim · LMB fire · wheel/1-3 weapons · R reload · G sniff petrol · B wheelie (bike) · RIGHT ALT skateboard · N board boost · T trick"
+			# Parked showcase cars are free to take; moving traffic is grand theft.
+			var showcase := nearest.is_in_group("showcase_vehicles")
+			var action := "STEAL" if nearest.is_in_group("traffic_vehicles") and not showcase else "DRIVE"
+			hint_text = "[ E ]  %s %s" % [action,str(nearest.get("vehicle_name")).to_upper()]
 	if Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
-		hint_text = "MOUSE RELEASED · Click to resume     F5  respawn"
+		hint_text = "CLICK TO RESUME"
+	hint.visible = not hint_text.is_empty()
 	_set_label_text(hint, hint_text)
 	var wanted := get_node_or_null("WantedSystem")
 	_set_label_text(wanted_label, wanted.stars_text() if wanted != null else "")
+
+func _hud_label(font_size: int, color: Color, align: HorizontalAlignment) -> Label:
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size",font_size)
+	label.add_theme_color_override("font_color",color)
+	label.add_theme_color_override("font_outline_color",Color(0,0,0,0.85))
+	label.add_theme_constant_override("outline_size",4 if font_size >= 18 else 3)
+	label.horizontal_alignment = align
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
+
+func _hud_bar_style(color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	return style
 
 func build_hud() -> void:
 	var layer := CanvasLayer.new()
@@ -320,81 +349,86 @@ func build_hud() -> void:
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(root)
-	var brand_panel := ColorRect.new()
-	brand_panel.color = Color(0.012,0.024,0.035,0.86)
-	brand_panel.position = Vector2(22,18)
-	brand_panel.size = Vector2(260,62)
-	brand_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(brand_panel)
-	var title := Label.new()
-	title.text = "SPLOOGE"
-	title.position = Vector2(36,18)
-	title.add_theme_font_size_override("font_size",27)
-	title.add_theme_color_override("font_color",Color("ffcb52"))
-	root.add_child(title)
-	var sub := Label.new()
-	sub.text = "SYDNEY  /  FREE ROAM" if using_sydney else "DISTRICT ZERO  /  FREE ROAM"
-	sub.position = Vector2(38,51)
-	sub.add_theme_font_size_override("font_size",12)
-	sub.add_theme_color_override("font_color",Color("c2cbd0"))
-	root.add_child(sub)
-	var stats_panel := ColorRect.new()
-	stats_panel.color = Color(0.012,0.024,0.035,0.86)
-	stats_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	stats_panel.offset_left = -318
-	stats_panel.offset_right = -22
-	stats_panel.offset_top = 18
-	stats_panel.offset_bottom = 91
-	stats_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(stats_panel)
-	hud = Label.new()
-	hud.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	hud.offset_left = -300
-	hud.offset_right = -34
-	hud.offset_top = 24
-	hud.offset_bottom = 66
-	hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	hud.add_theme_font_size_override("font_size",15)
-	hud.add_theme_color_override("font_color",Color("f1f1e9"))
+	# Quake/UT-style HUD: bare numbers and bars over the world, no frames and
+	# no keybind legend. Prompts appear only when there is something to do.
+	hud = _hud_label(12,Color(0.78,0.81,0.79,0.85),HORIZONTAL_ALIGNMENT_LEFT)
+	hud.text = "REP  000"
+	hud.position = Vector2(26,20)
 	root.add_child(hud)
+	var health_caption := _hud_label(10,Color(0.75,0.79,0.77,0.85),HORIZONTAL_ALIGNMENT_LEFT)
+	health_caption.text = "HEALTH"
+	health_caption.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	health_caption.offset_left = 188
+	health_caption.offset_right = 320
+	health_caption.offset_top = -94
+	health_caption.offset_bottom = -80
+	root.add_child(health_caption)
+	health_label = _hud_label(38,Color("ffcb52"),HORIZONTAL_ALIGNMENT_LEFT)
+	health_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	health_label.offset_left = 186
+	health_label.offset_right = 330
+	health_label.offset_top = -80
+	health_label.offset_bottom = -28
+	root.add_child(health_label)
 	health_bar = ProgressBar.new()
-	health_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	health_bar.offset_left = -292
-	health_bar.offset_right = -34
-	health_bar.offset_top = 73
-	health_bar.offset_bottom = 81
+	health_bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+	health_bar.offset_left = 188
+	health_bar.offset_right = 310
+	health_bar.offset_top = -24
+	health_bar.offset_bottom = -20
 	health_bar.min_value = 0
 	health_bar.max_value = 100
 	health_bar.show_percentage = false
 	health_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var health_fill := StyleBoxFlat.new()
-	health_fill.bg_color = Color("d5b45e")
-	health_bar.add_theme_stylebox_override("fill",health_fill)
-	var health_track := StyleBoxFlat.new()
-	health_track.bg_color = Color("30383a")
-	health_bar.add_theme_stylebox_override("background",health_track)
+	health_bar.add_theme_stylebox_override("fill",_hud_bar_style(Color("ffcb52")))
+	health_bar.add_theme_stylebox_override("background",_hud_bar_style(Color(0.10,0.12,0.13,0.85)))
 	root.add_child(health_bar)
-	var bottom := ColorRect.new()
-	bottom.color = Color(0.012,0.024,0.035,0.82)
-	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom.offset_top = -72
-	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(bottom)
-	status = Label.new()
-	status.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	status.offset_top = -64
-	status.offset_bottom = -38
-	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status.add_theme_color_override("font_color",Color("ffcb52"))
-	status.add_theme_font_size_override("font_size",18)
+	vehicle_label = _hud_label(12,Color(0.78,0.81,0.79,0.9),HORIZONTAL_ALIGNMENT_RIGHT)
+	vehicle_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	vehicle_label.offset_left = -400
+	vehicle_label.offset_right = -30
+	vehicle_label.offset_top = -106
+	vehicle_label.offset_bottom = -86
+	root.add_child(vehicle_label)
+	status = _hud_label(46,Color("ffcb52"),HORIZONTAL_ALIGNMENT_RIGHT)
+	status.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	status.offset_left = -320
+	status.offset_right = -30
+	status.offset_top = -90
+	status.offset_bottom = -32
 	root.add_child(status)
-	hint = Label.new()
+	speed_unit = _hud_label(10,Color(0.78,0.81,0.79,0.9),HORIZONTAL_ALIGNMENT_RIGHT)
+	speed_unit.text = "KM/H"
+	speed_unit.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	speed_unit.offset_left = -320
+	speed_unit.offset_right = -32
+	speed_unit.offset_top = -31
+	speed_unit.offset_bottom = -14
+	root.add_child(speed_unit)
+	hull_bar = ProgressBar.new()
+	hull_bar.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	hull_bar.offset_left = -190
+	hull_bar.offset_right = -30
+	hull_bar.offset_top = -10
+	hull_bar.offset_bottom = -6
+	hull_bar.min_value = 0
+	hull_bar.max_value = 100
+	hull_bar.show_percentage = false
+	hull_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hull_bar.add_theme_stylebox_override("fill",_hud_bar_style(Color("ffcb52")))
+	hull_bar.add_theme_stylebox_override("background",_hud_bar_style(Color(0.10,0.12,0.13,0.85)))
+	root.add_child(hull_bar)
+	weapon_label = _hud_label(20,Color("f1f1e9"),HORIZONTAL_ALIGNMENT_RIGHT)
+	weapon_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+	weapon_label.offset_left = -400
+	weapon_label.offset_right = -30
+	weapon_label.offset_top = -60
+	weapon_label.offset_bottom = -26
+	root.add_child(weapon_label)
+	hint = _hud_label(15,Color(0.92,0.93,0.88,0.95),HORIZONTAL_ALIGNMENT_CENTER)
 	hint.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	hint.offset_top = -34
-	hint.offset_bottom = -8
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hint.add_theme_color_override("font_color",Color("d3d9d8"))
-	hint.add_theme_font_size_override("font_size",13)
+	hint.offset_top = -144
+	hint.offset_bottom = -116
 	root.add_child(hint)
 	if using_sydney:
 		minimap = MiniMap.new()
@@ -404,20 +438,17 @@ func build_hud() -> void:
 		minimap.roads = sydney_world.data.get("roads",[])
 		minimap.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 		minimap.offset_left = 22
-		minimap.offset_top = -198
-		minimap.offset_right = 190
+		minimap.offset_top = -174
+		minimap.offset_right = 174
 		minimap.offset_bottom = -22
 		minimap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		root.add_child(minimap)
-	wanted_label = Label.new()
+	wanted_label = _hud_label(14,Color("ff5a4d"),HORIZONTAL_ALIGNMENT_RIGHT)
 	wanted_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-	wanted_label.offset_left = -330
-	wanted_label.offset_right = -340
-	wanted_label.offset_top = 96
-	wanted_label.offset_bottom = 128
-	wanted_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	wanted_label.add_theme_font_size_override("font_size", 18)
-	wanted_label.add_theme_color_override("font_color", Color("ff5a4d"))
+	wanted_label.offset_left = -340
+	wanted_label.offset_right = -26
+	wanted_label.offset_top = 18
+	wanted_label.offset_bottom = 46
 	root.add_child(wanted_label)
 	cross = Label.new()
 	cross.text = "+"

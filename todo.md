@@ -1,20 +1,78 @@
 # Splooge TODO
 
-## Finish current gameplay pass
-- Verify the new shotgun: equip keys, model, pellet spread, damage, reload, and sound.
-- Make bullet impacts visibly splatter and break apart hostile and pedestrian bodies; inspect a rendered capture.
-- Verify the night-start clock, city lighting, and animated flying foxes; check that foxes hide during daytime.
-- Re-run the ecosystem suite and canonical scene startup. The District Zero integration suite still has the two documented melee/reputation failures.
+## Critical / player-facing bugs
 
-## Sydney transport and places
-- [x] Add Wynyard and Town Hall underground stations, a continuous double-track rail route from Milsons Point through to Redfern, authored enclosed tunnel bores/portals for underground segments, and basic visual train service with station stops. See [rail-network phase 1](docs/SYDNEY_RAIL_NETWORK_PHASE1.md).
-- [x] Render tunnel-tagged roads as 3D tunnel structures (road surface, shell, portals) instead of omitting them from the surface.
-- Add accurate K-set and Tangara/T-set train traffic/service detail (no Millennium trains): inspect supplied model archives for license/compatibility, improve consists/variation, and add richer scheduling/behavior beyond current visual dwell service.
-- Add rail simulation depth as needed (signaling/interlocking, train-world interaction/collision constraints, passenger/timetable systems) if gameplay requires it; current implementation is authored presentation/service, not surveyed or fully simulated.
-- Build the missing CBD-to-bridge overpass and connect it to Anzac Bridge without overlapping or breaking the canonical world.
-- Add Luna Park and authored Kings Cross nightlife/people, and refine Town Hall, QVB, and Hyde Park.
+- [x] **Fix the open hole in the ground near the Harbour Bridge / rail tunnel approach.** The ground was cut with 16 m axis-aligned squares for a curved rail cutting, so the holes overhung the trench by up to 8 m and rotated corners opened more than 22 m across the track. The cutting floor had visual geometry but no collision, and per-segment floor boxes left wedges at curve joints. Fixed by:
+  - cutting one corridor-shaped ground opening along `StationInteriors.descent_cut_path()` (`cbd_world.gd::_build_descent_cut_ground`), starting at the descent portal instead of 40 m below it;
+  - one continuous cut floor strip plus concave collision (`cbd_rail_network.gd::_build_descent_cutting`);
+  - collision on the retaining walls and floor, and a street-level parapet above the jump apex along both rims.
+  - Verified with a raycast probe across the whole trench (574 samples: 0 voids, 0 broken rim) and regenerated street-level captures. Committed tests: `tests/cbd_rail_vertical_test.gd` checks the corridor cut and the absence of square holes.
+- [x] **Fix scaffolding-looking building facades.** The city-wide "simple facade" tier drew dark bars and floor bands proud of the legacy flat shell with no glazing behind them, and the arch-slice structural layer also overlaid the old facade grid. Removed the city-wide tier; the reviewed slice now emits opaque backing panels (glazing behind mullions for towers, wall tone for masonry) and real window glass, so the structural layer reads as the building rather than scaffolding.
+  - Verified from the reported street-level viewpoints. Note: the masonry slice now uses the architecture shader's material grain rather than the legacy brick texture; a future pass could add brick sampling to `architecture.gdshader`.
 
-## Art and remaining project work
-- Inspect and integrate selected commercially permitted Devil's Work.shop car assets; use additional verified CC0 MegaKit building modules where they improve the existing city.
-- Find a licensed 3D weapon asset if one becomes available; the indexed weapon archives were absent from the shared library.
-- Finish the non-overlapping Walsh Bay/Fort Denison harbour work and the vehicle-overhaul captures/human drive-through notes.
+## Streets / roads (new)
+
+- [x] **Roads were invisible city-wide.** Every asphalt ribbon was built with counter-clockwise winding while Godot treats clockwise as the front face; the footpath material culls both sides, but the asphalt shader culled the roads from above. The ground showed through, so streets read as blank pale slabs and Broadway looked like it had no road at all. Fixed with `cull_disabled` in `shaders/asphalt.gdshader` (all road ribbons are horizontal). The Central / Railway Square / Broadway area now renders as dark carriageways with concrete footpaths.
+- [x] **Street trees no longer stand in carriageways.** Broadway is exported as two overlapping 22 m one-way ribbons, so a tree offset 2.1 m beyond one carriageway landed in the middle of the other. `cbd_greenery.gd` now indexes every carriageway segment and rejects a candidate tree if it falls inside any road other than its own.
+- [x] **Parramatta Road exists now.** The Stage B export stopped at x = -1386.9, the middle of Broadway, so the road dead-ended in grass. The Inner West export uses the same projection, so its strip west of the seam was spliced into `sydney/world/stage_b/world.json`: bounds now extend to x = -2700 (Glebe / Camperdown / Annandale), with 1,329 real road rows, 3,078 footpaths, 2,661 OSM buildings and 372 parks added. Roads/footpaths are clipped at the new boundary; building rings are validated against the new bounds. World build cost rises from ~12 s to ~16 s.
+- [x] **Lane markings and kerbs.** Road ribbons now carry dashed lane dividers (one per lane, up to seven lanes) and solid edge lines, generated from the exported centrelines in `SydneyMesh.road_markings_mesh()`; overlapping Broadway/Parramatta ribbons are painted once. A 0.55 m concrete kerb strip (`road_kerb_mesh()`) gives the carriageway a defined edge at footpath level. Pedestrian ways and service lanes stay unmarked; every vehicle street 9 m or wider is painted.
+- [ ] The new west strip still ends abruptly at x = -2700 (Parramatta Road continues further west in real life); extending the city again needs another data splice. Spliced OSM buildings that touch the inflated carriageway buffer (mostly ≤1.5 m, in the dense residential blocks south of Parramatta Road) are kept because removing them would hollow out whole blocks.
+
+## HUD / presentation (new)
+
+- [x] Boots fullscreen (`display/window/size/mode=3`).
+- [x] HUD rebuilt as a minimal Quake/UT-style overlay in `scripts/district.gd`: health number and thin bar bottom-left beside the minimap, speed/hull bottom-right, weapon line when on foot, REP top-left, wanted stars top-right. Removed the wordmark panel, the full-width bottom bar and the permanent keybind legend. Prompts now appear only when actionable (`[E] DRIVE …`, shoplift, click-to-resume).
+
+## Vehicles (new)
+
+- [x] Three more sports cars in the fleet: `STING · ROADSTER` (open cockpit, roll hoops), `PHANTOM · HYPERCAR` (bubble canopy, roof snorkel, long tail, rear wing) and `APEX · TRACK SPECIAL` (exposed cage, canards, splitter, tall wing). Specs live in `VehicleVisualBuilder.get_class_specs()`; silhouettes in `build_vehicle_visuals()`.
+- [x] Sports and performance cars now paint from a vivid palette (red, orange, yellow, teal, blue, magenta, pearl, black) instead of the muted commuter colours, so exotics read at distance.
+- [x] City-street performance share raised from ~32% to ~37%; night is performance-heavy and arterials mix the new classes in. They use the sports engine-audio profile and are enterable/stealable like any other traffic car.
+- [x] The three new exotics are parked at fixed kerbs near menu spawns so they can be found on foot: `STING · ROADSTER` on Eddy Avenue at Central, `PHANTOM · HYPERCAR` on George Street at Circular Quay, `APEX · TRACK SPECIAL` on Harrington Street in The Rocks. Positions are derived from the nearest real carriageway to each viewpoint and marked `showcase_vehicles`, so taking one is a free DRIVE rather than a wanted-level car theft.
+
+## Main menu (new)
+
+- [x] Opening menu with time of day (Morning / Midday / Afternoon / Evening) and spawn choice: Harbour Bridge sports car, Central Station, Town Hall, Circular Quay, The Rocks, Barangaroo.
+  - `scripts/main_menu.gd` overlay, applied by `sydney_cbd_district.gd`. The game is paused behind the menu and the choice is applied without reloading the world.
+  - Only shown when `main.tscn` is the running game; headless suites and `--script` capture tools keep their canonical defaults. `SPLOOGE_MENU=0/1` overrides it.
+  - Paused time is applied on start; players walking spawns call `player.respawn()` so the sports car is exited cleanly.
+
+## Gameplay — verify in the actual game
+
+- [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking).
+- [ ] Confirm wheelie rider pose stays correct while turning/accelerating/braking (currently scripted and visually captured only).
+- [ ] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked.
+- [ ] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react).
+
+## Visual direction / world quality
+
+- [x] **Paper-thin buildings at road forks are now widened, not deleted.** Generated block remainders and a few OSM slivers could be 0.3-2.5 m wide but 30-80 m long, reading as blades beside the kerb. `CbdWorld._fatten_ring()` inflates each thin footprint to a 3.4 m average width (2.4 m for OSM rows), slides it back into the block by the same amount to preserve the road-facing edge, and keeps the original parcel if widening has nowhere to go inside the block. 536 rows widened; every building still keeps clear of every carriageway.
+
+- [ ] Skyline still reads as thin cyan lines rather than a dense futuristic silhouette; the hero towers help but the base shell is low-detail. See `docs/CYBERPUNK_ASSET_GAP.md`.
+- [ ] Underdressed districts (Circular Quay, Barangaroo, The Rocks, Central, Darling Harbour, Pyrmont, Inner West) still need authored architectural identity rather than more neon signs.
+- [ ] No authored futuristic vehicle fleet or rigged human models exist in `Z:\GITHUB\_ASSETS\ASSETS`; procedural fleet/humanoids remain. Documented in `docs/CYBERPUNK_ASSET_GAP.md`.
+
+## Performance / stability
+
+- [ ] Investigate daylight frame time (~128 ms, ~22.5 M primitives) — pre-existing, separate from the night shadow optimisation (night is ~54 ms, ~5.4 M primitives with sun shadows disabled).
+- [ ] Long-session soak test (multi-hour) for memory growth and scene-object accumulation; current test covered only ~600 frames.
+- [ ] Re-run `tests/perf_compare.gd` from a fixed camera/time/weather after any future change; beware high run-to-run variance in this environment.
+
+## Tests / tooling
+
+- [x] `tests/cbd_rail_vertical_test.gd` — 16/16 PASS after the ground-cut and collision fix.
+- [x] `tests/cbd_rail_network_test.gd` — 29/29 PASS.
+- [x] `tests/parse_check.gd` — 138 scripts, 0 failed.
+- [x] `tests/cbd_expansion_test.gd` — 54 checks, 0 failures. `CbdWorld._sanitize_buildings()` now rejects self-intersecting rings, generated parcels crossing a carriageway (300 rows) and footprints centred in water (4), and recomputes the OSM/generated/style stats. Menu viewpoints snap to the nearest footpath. The shoreline assertion now accepts the current `HarbourWater/HarbourWaterCollision` barrier that supersedes Stage A's `WaterCollision`.
+- [x] `tests/gameplay_overhaul_test.gd` — 13/13 PASS at last run (not re-run in this pass).
+- [x] `tests/gameplay_regression.gd` — 18/18 PASS at last run (occasionally flaky vehicle-exit case when a random traffic car starts against a wall; not re-run in this pass).
+- [x] Headless canonical scene — 0 script errors at last run; real-game boot with the menu quit cleanly after 600 frames with no script errors.
+- [ ] Keep both gameplay harnesses green after the hole/facade fixes; add explicit grind and explosion-chain regression assertions.
+
+## Repo state / notes
+
+- Last commit: `34d5984` (pushed to `origin/main`). Working-tree changes from this pass are uncommitted.
+- Street rendering fix is in `shaders/asphalt.gdshader`; tree clearance in `sydney/cbd/cbd_greenery.gd`; Parramatta extension is data-only in `sydney/world/stage_b/world.json` (provenance noted in its `limitations`).
+- Handoff notes: `docs/GAMEPLAY_OVERHAUL_HANDOFF.md`, `docs/CYBERPUNK_ASSET_GAP.md`.
+- Inner West exists as a separate playtest district (`sydney/sydney_inner_west_test.tscn`, King Street, Newtown), but its world build walks ~23.6k footpaths and ~27.5k buildings synchronously and does not complete in a practical time in this environment, so it is not offered in the menu. Its rail ribbon call had a nested-array bug that aborted rail construction; that call is fixed, but the district still needs a build-time budget pass before it can be a spawn.
+- Do not commit unless asked.
