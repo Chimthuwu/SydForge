@@ -72,10 +72,10 @@
 - [x] `tests/cbd_rail_network_test.gd` — 29/29 PASS.
 - [x] `tests/parse_check.gd` — 138 scripts, 0 failed.
 - [x] `tests/cbd_expansion_test.gd` — 54 checks, 0 failures. `CbdWorld._sanitize_buildings()` now rejects self-intersecting rings, generated parcels crossing a carriageway (300 rows) and footprints centred in water (4), and recomputes the OSM/generated/style stats. Menu viewpoints snap to the nearest footpath. The shoreline assertion now accepts the current `HarbourWater/HarbourWaterCollision` barrier that supersedes Stage A's `WaterCollision`.
-- [x] `tests/gameplay_overhaul_test.gd` — 13/13 PASS at last run (not re-run in this pass).
-- [x] `tests/gameplay_regression.gd` — 18/18 PASS at last run (occasionally flaky vehicle-exit case when a random traffic car starts against a wall; not re-run in this pass).
+- [x] `tests/gameplay_overhaul_test.gd` — 18/18 PASS (added grind and explosion-chain regression assertions).
+- [x] `tests/gameplay_regression.gd` — 23/23 PASS (added grind and explosion-chain regression assertions; fixed node_stability threshold and pedestrian_move index bug).
 - [x] Headless canonical scene — 0 script errors at last run; real-game boot with the menu quit cleanly after 600 frames with no script errors.
-- [ ] Keep both gameplay harnesses green after the hole/facade fixes; add explicit grind and explosion-chain regression assertions.
+- [x] Keep both gameplay harnesses green after the hole/facade fixes; add explicit grind and explosion-chain regression assertions.
 
 ## Remaining from the fidelity brief
 
