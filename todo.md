@@ -49,8 +49,11 @@
 
 - [x] **Test plan documented:** Created `docs/INTEGRATION_SCENARIOS_TESTPLAN.md` with 13-scenario checklist, headless coverage map, and sign-off table. Headless suites cover grind, explosion chain, NOS, bike wheelie, skate mount/dismount, vehicle enter/exit.
 - [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking). Requires live windowed session; headless coverage documented.
+- [x] **Test plan documented:** Created `docs/WHEELIE_RIDER_POSE_TESTPLAN.md` for wheelie pose verification (straight, turn, brake, NOS, crash).
 - [ ] Confirm wheelie rider pose stays correct while turning/accelerating/braking (currently scripted and visually captured only).
+- [x] **Test plan documented:** Created `docs/GRIND_CITY_LEDGES_TESTPLAN.md` with 7 locations × 10 test variants, sign-off matrix.
 - [ ] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked.
+- [x] **Test plan documented:** Created `docs/POLICE_WANTED_ESCALATION_TESTPLAN.md` with 6 escalation scenarios, AI behavior matrix, tier definitions.
 - [ ] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react).
 
 ## Visual direction / world quality
@@ -82,7 +85,9 @@
 
 - [ ] **Priority 1 terrain.** Stage B still has no elevation block. Real data is available (the Inner West district already uses public-domain AWS/Mapzen terrarium tiles in `sydney/world/inner_west/height.bin`), but a correct pass needs the ground, road/footpath ribbons, building foundations, parks, street furniture and collisions all re-based onto the grid while preserving the Harbour Bridge, Opera House and authored station elevations. Not attempted in this pass; no noise terrain was shipped.
 - [ ] **Priority 2 landmark/station depth.** Central still has the authored sandstone frontage, clock tower and four platform canopies, but not the full concourse/forecourt/multi-platform complex. Circular Quay, Darling Harbour, Town Hall, QVB, St Mary's and Hyde Park remain at their previous authored level.
+- [x] **Test plan documented:** Created `docs/VISUAL_CAPTURE_TESTPLAN.md` for 131 storefronts, night headlights (5 vehicle classes), pause/controls screens.
 - [ ] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout.
+- [x] **Test plan documented:** Created `docs/RAIL_CROSSING_DRIVE_TESTPLAN.md` for 14 rail cutting crossings + Central/Redfern approach, 8 vehicle classes.
 - [ ] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach.
 
 ## Repo state / notes
