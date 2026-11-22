@@ -107,5 +107,54 @@ func _run() -> void:
 		_check("nos_cleanup", idle < 0.05, "intensity=%.2f" % idle)
 		bike.call("exit_vehicle")
 
+	# Grind regression: enter skateboard, test grind state machine
+	var board_count1 = get_nodes_in_group("skateboards").size()
+	player.call("toggle_skateboard")
+	await _frames(6)
+	var boards1 = get_nodes_in_group("skateboards")
+	var mounted1 = player.has_meta("skateboard")
+	_check("grind_mount", boards1.size() == board_count1 + 1 and mounted1, "boards=%d mounted=%s" % [boards1.size(), mounted1])
+	if mounted1 and not boards1.is_empty():
+		var board: Node3D = boards1[0] as Node3D
+		# Manually trigger grind state to test sustain/exit logic (headless mode lacks world geometry for raycast-based entry)
+		board.set("grinding", true)
+		board.set("grind_dir", Vector3.FORWARD)
+		board.set("_grind_stable", 0.0)
+		board.set("speed", 8.0)
+		await _frames(10)
+		var grinding: bool = bool(board.get("grinding"))
+		_check("grind_state_enter", grinding, "grinding=%s" % grinding)
+		if grinding:
+			await _frames(30)
+			var still_grinding: bool = bool(board.get("grinding"))
+			var grind_stable: float = float(board.get("_grind_stable"))
+			_check("grind_sustain", still_grinding or grind_stable > 0.5, "grind_stable=%.2f" % grind_stable)
+			# Test grind exit via jump buffer
+			board.set("_jump_buffer", 0.12)
+			await _frames(10)
+			var exited: bool = not bool(board.get("grinding"))
+			_check("grind_exit", exited, "exited=%s" % exited)
+		await _frames(10)
+		player.call("toggle_skateboard")
+		await _frames(6)
+
+	# Explosion chain regression: detonate a car near other vehicles/pedestrians
+	var cars2: Array = vehicles
+	if not cars2.is_empty():
+		var car1 = cars2[0]
+		var car2 = cars2[1] if cars2.size() > 1 else null
+		# Position car2 near car1
+		if car2 != null:
+			car2.global_position = car1.global_position + Vector3(5.0, 0.0, 0.0)
+			await _frames(2)
+		var hp1_before: float = float(car1.get("health"))
+		var hp2_before: float = float(car2.get("health")) if car2 != null else 0.0
+		car1.call("take_explosion_damage", 500.0)  # lethal, ensures explosion
+		await _frames(15)
+		var hp1_after: float = float(car1.get("health"))
+		var hp2_after: float = float(car2.get("health")) if car2 != null else 0.0
+		var chain_hit: bool = car2 != null and hp2_after < hp2_before
+		_check("explosion_chain_vehicle", hp1_after <= 0.0 and (car2 == null or chain_hit), "car1 health %.0f->%.0f car2 %.0f->%.0f chain=%s" % [hp1_before, hp1_after, hp2_before, hp2_after, chain_hit])
+
 	print("OVERHAUL_TOTAL %d/%d" % [pass_count, pass_count + fail_count])
 	quit()
