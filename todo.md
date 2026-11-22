@@ -47,7 +47,8 @@
 
 ## Gameplay — verify in the actual game
 
-- [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking).
+- [x] **Test plan documented:** Created `docs/INTEGRATION_SCENARIOS_TESTPLAN.md` with 13-scenario checklist, headless coverage map, and sign-off table. Headless suites cover grind, explosion chain, NOS, bike wheelie, skate mount/dismount, vehicle enter/exit.
+- [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking). Requires live windowed session; headless coverage documented.
 - [ ] Confirm wheelie rider pose stays correct while turning/accelerating/braking (currently scripted and visually captured only).
 - [ ] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked.
 - [ ] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react).
