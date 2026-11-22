@@ -86,7 +86,7 @@ func _build() -> void:
 	margin.add_child(column)
 
 	var title := Label.new()
-	title.text = "SPLOOGE"
+	title.text = "SYDFORGE"
 	title.add_theme_font_size_override("font_size", 46)
 	title.add_theme_color_override("font_color", GOLD)
 	column.add_child(title)

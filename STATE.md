@@ -1,4 +1,4 @@
-# STATE — Splooge
+# STATE — SydForge
 
 _Cross-session daily report; durable design details live in project docs._
 

@@ -1,7 +1,7 @@
 config_version=5
 
 [application]
-config/name="Splooge"
+config/name="SydForge"
 run/main_scene="res://scenes/main.tscn"
 
 [autoload]

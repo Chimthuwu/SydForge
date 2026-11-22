@@ -2,5 +2,5 @@
 
 [ext_resource type="Script" path="res://scripts/sydney_cbd_district.gd" id="1_main"]
 
-[node name="Splooge" type="Node3D"]
+[node name="SydForge" type="Node3D"]
 script = ExtResource("1_main")

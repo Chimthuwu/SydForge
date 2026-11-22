@@ -8,6 +8,7 @@ extends SceneTree
 ##
 ## Optional:
 ##   SPLOOGE_HIDE="ArchitectureSlice,SkylineHeroes"  hide named nodes before capture
+##   SPLOOGE_HIDE_UI=1                               hide every CanvasLayer (clean stills)
 ##   SPLOOGE_VIEWS=all|street|rail|tunnel           choose the view subset
 
 var scene: Node3D
@@ -77,12 +78,21 @@ func _hide(names: Array) -> void:
 	await _frames(10)
 
 
+func _hide_ui() -> void:
+	for node in scene.find_children("*", "CanvasLayer", true, false):
+		(node as CanvasLayer).visible = false
+		print("HIDDEN UI: ", node.name)
+	await _frames(10)
+
+
 func _run() -> void:
 	scene = load("res://scenes/main.tscn").instantiate()
 	get_root().add_child(scene)
 	await _frames(80)
 	if not hide_list.is_empty():
 		await _hide(hide_list)
+	if not OS.get_environment("SPLOOGE_HIDE_UI").is_empty():
+		await _hide_ui()
 	time_mgr = scene.get_node_or_null("WorldTimeManager")
 	weather_mgr = scene.get_node_or_null("WeatherManager")
 	review = Camera3D.new()

@@ -1,4 +1,4 @@
-# Performance Audit — Splooge / Sydney CBD
+# Performance Audit — SydForge / Sydney CBD
 
 **Date:** 2026-11-20
 **Scope:** investigation was read-only; the fixes listed in §11 were applied afterwards.
