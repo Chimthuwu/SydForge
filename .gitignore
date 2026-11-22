@@ -5,3 +5,5 @@
 *.log
 Godot*.exe
 tests/*.png
+# Development-time OSM/asset downloads; only processed outputs are committed.
+data_raw/

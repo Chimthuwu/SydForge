@@ -90,8 +90,9 @@ var _used_edges: Dictionary = {}
 var _placed_points: Array[Vector2] = []
 
 
-func build(world_data: Dictionary) -> void:
+func build(world_data: Dictionary, avoid_points: Array[Vector2] = []) -> void:
 	name = "RetailChains"
+	var reserved := 0
 	var shops := 0
 	var skipped := 0
 	var labels := 0
@@ -111,6 +112,17 @@ func build(world_data: Dictionary) -> void:
 			skipped += 1
 			continue
 		var shop_point: Vector2 = candidate["point"]
+		# Real OSM businesses take precedence; never overlay a parody brand on
+		# top of a mapped chain storefront.
+		var reserved_here := false
+		for existing: Vector2 in avoid_points:
+			if existing.distance_to(shop_point) < 18.0:
+				reserved_here = true
+				break
+		if reserved_here:
+			reserved += 1
+			skipped += 1
+			continue
 		var too_close := false
 		for existing: Vector2 in _placed_points:
 			if existing.distance_to(shop_point) < 7.0:
@@ -139,6 +151,7 @@ func build(world_data: Dictionary) -> void:
 		"shops": shops,
 		"labels": labels,
 		"skippedSites": skipped,
+		"reservedSites": reserved,
 		"buildings": buildings.size(),
 		"byBrand": by_brand,
 		"parody": true,

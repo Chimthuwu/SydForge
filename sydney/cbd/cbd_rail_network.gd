@@ -58,6 +58,7 @@ func build(world_data: Dictionary, harbour_bridge: Node3D) -> bool:
 	_index_station_route_positions()
 	_build_track_meshes()
 	_build_tunnel_enclosures()
+	_build_below_grade_floor()
 	_build_descent_cutting()
 	_build_stations(world_data)
 	stats = {
@@ -881,6 +882,53 @@ func _build_tunnel_enclosures() -> void:
 	_setup_tunnel_lights()
 
 
+## Solid track bed for every below-grade section, including the shallow
+## Central approach where the bore is too tall to fit under the street slab.
+## `_build_tunnel_enclosures` deliberately leaves those segments unroofed, but
+## they still need a floor: without one a body that leaves the platform or the
+## bore falls through the city to the void below the ground cells.
+func _build_below_grade_floor() -> void:
+	if main_route_points.size() < 2:
+		return
+	var body := StaticBody3D.new()
+	body.name = "RailTrackBedCollision"
+	var boxes := 0
+	# The open cut has its own continuous floor strip plus slab; its bed is
+	# 0.23 m lower than this one, so including it would leave bodies standing
+	# on an invisible ledge above the visible trench floor.
+	var cut_first := _descent_cut_first_index()
+	var cut_last := _descent_cut_last_index()
+	for i in range(main_route_points.size() - 1):
+		if _is_bridge_segment(i):
+			continue
+		if cut_first >= 0 and i >= cut_first and i < cut_last:
+			continue
+		var a: Vector3 = main_route_points[i]
+		var b: Vector3 = main_route_points[i + 1]
+		var track_y := (a.y + b.y) * 0.5
+		if track_y > -0.8:
+			continue
+		var direction := b - a
+		direction.y = 0.0
+		var length := direction.length()
+		if length < 0.1:
+			continue
+		var basis := _track_basis(direction / length)
+		var top := track_y - 0.04 # ballast top, where feet and tyres rest
+		var mid := (a + b) * 0.5
+		_add_collision_box(
+			body,
+			Vector3(mid.x, top - 0.6, mid.z),
+			basis,
+			Vector3(11.0, 1.2, length + 0.8)
+		)
+		boxes += 1
+	if boxes == 0:
+		body.free()
+		return
+	add_child(body)
+
+
 ## Open cut between the southern bridge approach and the first deep bore.
 ## The matching ground opening is cut by CbdWorld from
 ## StationInteriors.descent_cut_path() as a corridor of the same width.
@@ -935,6 +983,28 @@ func _build_descent_cutting() -> void:
 		var floor_collider := CollisionShape3D.new()
 		floor_collider.shape = floor_shape
 		collision_root.add_child(floor_collider)
+	# The visual/collision surface above is a zero-thickness triangle strip. At
+	# road speed a CharacterBody can end a physics step below it without ever
+	# registering a contact, so the car drops through the trench. Give the cut a
+	# real slab underneath: per-segment boxes overlapping at the joints, exactly
+	# like the retaining walls. The strip above stays the walking surface.
+	for i in range(first, last):
+		var a: Vector3 = main_route_points[i]
+		var b: Vector3 = main_route_points[i + 1]
+		var direction := b - a
+		direction.y = 0.0
+		var length := direction.length()
+		if length < 0.1:
+			continue
+		var basis := _track_basis(direction / length)
+		var top := ((a.y + b.y) * 0.5) - 0.27
+		var mid := (a + b) * 0.5
+		_add_collision_box(
+			collision_root,
+			Vector3(mid.x, top - 0.75, mid.z),
+			basis,
+			Vector3(13.2, 1.5, length + 1.0) # matches DESCENT_CUT_HALF_WIDTH * 2
+		)
 	for i in range(first, last):
 		var a := main_route_points[i]
 		var b := main_route_points[i + 1]

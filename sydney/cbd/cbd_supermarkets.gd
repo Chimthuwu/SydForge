@@ -11,6 +11,9 @@ extends Node3D
 
 const ArtUtil := preload("res://scripts/art.gd")
 const StoreRuntime := preload("res://sydney/cbd/supermarket_store.gd")
+## Real OSM business extract. The authored anchor only picks which mapped
+## Woolworths/Coles branch is used; the actual position is the OSM POI.
+const BUSINESS_PATH := "res://sydney/world/businesses.json"
 
 const AUTHORED_LANDMARKS := [
 	"way/104948253", "way/40717424", "way/16749128",
@@ -20,6 +23,7 @@ const STORES := [
 	{
 		"name": "WOOLWORTHS",
 		"short": "Woolworths",
+		"brand": "Woolworths",
 		"color": Color("1c7a3c"),
 		"lettering": Color("f4f1e5"),
 		"anchor": Vector2(-112.0, 154.0),
@@ -27,6 +31,7 @@ const STORES := [
 	{
 		"name": "COLES",
 		"short": "Coles",
+		"brand": "Coles",
 		"color": Color("c8232c"),
 		"lettering": Color("ffffff"),
 		"anchor": Vector2(-58.0, -250.0),
@@ -40,24 +45,55 @@ var _player: Node
 
 func build(world_data: Dictionary) -> void:
 	name = "Supermarkets"
+	var poi_rows := _load_business_pois()
 	for index in STORES.size():
 		var spec: Dictionary = STORES[index]
-		var facade := _nearest_facade(world_data, spec["anchor"])
+		var poi := _nearest_brand_poi(poi_rows, str(spec["brand"]), spec["anchor"])
+		var anchor: Vector2 = spec["anchor"]
+		if not poi.is_empty():
+			anchor = Vector2(float(poi.get("x", anchor.x)), float(poi.get("z", anchor.y)))
+		var facade := _nearest_facade(world_data, anchor)
 		if facade.is_empty():
 			push_warning("CbdSupermarkets: no facade near %s" % str(spec["name"]))
 			continue
-		_build_store(index, spec, facade)
+		_build_store(index, spec, facade, poi)
 	stats = {
 		"stores": stores.size(),
 		"names": stores.map(func(store: Node3D) -> String: return str(store.get_meta("store_name"))),
 		"interiors": stores.size(),
 		"shoplifting": true,
+		"osmIds": stores.map(func(store: Node3D) -> String: return str(store.get_meta("osm_id", ""))),
 	}
+
+
+func _load_business_pois() -> Array:
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(BUSINESS_PATH))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return []
+	return (parsed as Dictionary).get("pois", [])
+
+
+## Closest mapped branch of the requested brand to the authored anchor. The
+## anchor is only a selector, so the storefront still lands on a real POI.
+func _nearest_brand_poi(rows: Array, brand: String, anchor: Vector2) -> Dictionary:
+	var best: Dictionary = {}
+	var best_distance := INF
+	for row: Dictionary in rows:
+		if str(row.get("brand", "")) != brand:
+			continue
+		var point := Vector2(float(row.get("x", 0.0)), float(row.get("z", 0.0)))
+		var distance := point.distance_to(anchor)
+		if distance < best_distance:
+			best_distance = distance
+			best = row
+	return best
 
 
 func _nearest_facade(world_data: Dictionary, point: Vector2) -> Dictionary:
 	var best: Dictionary = {}
-	var best_distance := 26.0
+	# A supermarket POI often sits in the middle of a large centre (The Galeries,
+	# Central Park), so its exterior frontage can be well over 26 m away.
+	var best_distance := 70.0
 	for row: Dictionary in world_data.get("buildings", []):
 		var id := str(row.get("id", ""))
 		if id in AUTHORED_LANDMARKS:
@@ -75,7 +111,9 @@ func _nearest_facade(world_data: Dictionary, point: Vector2) -> Dictionary:
 			var b := Vector2(float(b_raw[0]), float(b_raw[1]))
 			var edge := b - a
 			var length := edge.length()
-			if length < 14.0:
+			# OSM splits long facades at every entrance, so a 13 m frontage must
+			# be allowed to shrink onto a shorter segment instead of skipping.
+			if length < 6.0:
 				continue
 			var tangent := edge / length
 			var outward := Vector2(tangent.y, -tangent.x) * orientation
@@ -84,13 +122,16 @@ func _nearest_facade(world_data: Dictionary, point: Vector2) -> Dictionary:
 			var distance := projection.distance_to(point)
 			if distance >= best_distance:
 				continue
-			var width := 13.0
+			var width := minf(13.0, length - 1.0)
+			if width < 6.0:
+				continue
 			var along := clampf(t, width * 0.5 + 0.6, length - width * 0.5 - 0.6)
 			best_distance = distance
 			best = {
 				"point": a + tangent * along,
 				"outward": outward,
 				"building": id,
+				"width": width,
 			}
 	return best
 
@@ -104,12 +145,17 @@ func _orientation(ring: Array) -> float:
 	return 1.0 if area > 0.0 else -1.0
 
 
-func _build_store(index: int, spec: Dictionary, facade: Dictionary) -> void:
+func _build_store(index: int, spec: Dictionary, facade: Dictionary, poi: Dictionary = {}) -> void:
 	var store := Node3D.new()
 	store.name = "Store_%s" % str(spec["short"])
 	store.add_to_group("supermarket")
 	store.set_meta("store_name", str(spec["name"]))
 	store.set_meta("shoplifting", true)
+	store.set_meta("osm_id", str(poi.get("osm", "")))
+	store.set_meta("source_lat", float(poi.get("lat", 0.0)))
+	store.set_meta("source_lon", float(poi.get("lon", 0.0)))
+	store.set_meta("world_x", float(poi.get("x", facade["point"].x)))
+	store.set_meta("world_z", float(poi.get("z", facade["point"].y)))
 	var point: Vector2 = facade["point"]
 	var outward: Vector2 = facade["outward"]
 	store.position = Vector3(point.x, 0.0, point.y) + Vector3(outward.x, 0.0, outward.y) * 0.24
@@ -119,7 +165,7 @@ func _build_store(index: int, spec: Dictionary, facade: Dictionary) -> void:
 
 	var color: Color = spec["color"]
 	var lettering: Color = spec["lettering"]
-	var width := 13.0
+	var width: float = float(facade.get("width", 13.0))
 	var door := Node3D.new()
 	door.name = "Entrance"
 	door.position = Vector3(0.0, 0.0, 0.55)

@@ -1,5 +1,7 @@
 extends Node3D
 
+const GameSettingsScript := preload("res://scripts/game_settings.gd")
+
 class MiniMap extends Control:
 	var player_ref: BoomPlayer
 	var camera_rig: BoomCamera
@@ -178,6 +180,10 @@ func configure_input() -> void:
 	var aim_mouse := InputEventMouseButton.new()
 	aim_mouse.button_index = MOUSE_BUTTON_RIGHT
 	InputMap.action_add_event("aim",aim_mouse)
+	# Defaults exist before saved remaps are applied, so a fresh profile and a
+	# remapped one share the same fallback behaviour.
+	GameSettingsScript.load_settings()
+	GameSettingsScript.apply_bindings()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
@@ -202,7 +208,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			player.cycle_weapon(-1)
 	if event.is_action_pressed("flashlight"):
-		player.toggle_flashlight()
+		# F is context-sensitive: headlights while driving, torch on foot.
+		if player.vehicle != null and player.vehicle.has_method("toggle_headlights"):
+			player.vehicle.call("toggle_headlights")
+		else:
+			player.toggle_flashlight()
 	var audio := get_node_or_null("/root/AudioDirector")
 	if event.is_action_pressed("audio_up") and audio != null:
 		message = "MASTER %+d dB" % int(audio.adjust_master_volume(2.0))

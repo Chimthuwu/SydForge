@@ -7,9 +7,15 @@ extends Node3D
 
 const ART := preload("res://scripts/art.gd")
 const MAX_STREETLIGHTS := 6500
-const ACTIVE_STREETLIGHTS := 18
+const ACTIVE_STREETLIGHTS := 14
 const ACTIVE_LANDMARK_LIGHTS := 6
 const STREETLIGHT_RANGE := 30.0
+## AI cars are the largest source of dynamic lights at night. Rank the nearby
+## cars and keep headlights on only for the closest few, so a busy street does
+## not turn every windscreen into an extra spot light.
+const AI_HEADLIGHT_RADIUS := 70.0
+const AI_HEADLIGHT_MAX := 6
+const GameSettingsScript := preload("res://scripts/game_settings.gd")
 const BUILDING_GRID_SIZE := 40.0
 const WINDOW_EMISSION_LEVELS := [3.2, 2.4, 2.0]
 
@@ -33,6 +39,7 @@ var _street_base_energies: Array[float] = []
 var _update_timer: float = 0.0
 var _building_grid: Dictionary = {}
 var _occupied_light_cells: Dictionary = {}
+var _ai_candidates: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -79,6 +86,7 @@ func _process(delta: float) -> void:
 	_apply_streetlight_energies()
 	_apply_landmark_energies()
 	_update_player_vehicle_visibility()
+	_update_ai_headlights()
 
 
 func _on_night_mode_changed(night: bool) -> void:
@@ -751,6 +759,45 @@ func _emissive_material(albedo: Color, emission: Color) -> StandardMaterial3D:
 	material.emission_energy_multiplier = 0.0
 	material.roughness = 0.4
 	return material
+
+
+## Central budget for AI headlights. Street lamps and landmark washes already
+## have their own caps; this closes the remaining unbounded source. The
+## candidate list is rebuilt four times a second, not per frame.
+func _update_ai_headlights() -> void:
+	var player := _player_ref
+	if player == null or not is_instance_valid(player):
+		return
+	_ai_candidates.clear()
+	var player_position := player.global_position
+	for node in get_tree().get_nodes_in_group("traffic_vehicles"):
+		var vehicle := node as Node3D
+		if vehicle == null or not is_instance_valid(vehicle):
+			continue
+		if not vehicle.has_method("apply_light_budget"):
+			continue
+		# A car the player is driving keeps its own full headlights and must stay
+		# outside the budget, otherwise hijacking at night would black it out.
+		if vehicle.get("driver") != null:
+			vehicle.set_light_budget_managed(false)
+			continue
+		vehicle.set_light_budget_managed(true)
+		var distance_sq := player_position.distance_squared_to(vehicle.global_position)
+		if distance_sq > AI_HEADLIGHT_RADIUS * AI_HEADLIGHT_RADIUS:
+			vehicle.apply_light_budget(false)
+			continue
+		_ai_candidates.append({"vehicle": vehicle, "distance_sq": distance_sq})
+	_ai_candidates.sort_custom(
+		func(a: Dictionary, b: Dictionary) -> bool:
+			return float(a["distance_sq"]) < float(b["distance_sq"])
+	)
+	var budget: int = clampi(GameSettingsScript.headlight_budget, 0, AI_HEADLIGHT_MAX)
+	if _lighting_factor <= 0.01:
+		budget = 0
+	for index in _ai_candidates.size():
+		var vehicle: Node = _ai_candidates[index]["vehicle"]
+		vehicle.set_light_budget_managed(true)
+		vehicle.apply_light_budget(index < budget)
 
 
 func _update_player_vehicle_visibility() -> void:

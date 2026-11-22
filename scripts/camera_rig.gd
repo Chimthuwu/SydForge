@@ -1,6 +1,8 @@
 class_name BoomCamera
 extends Node3D
 
+const GameSettings := preload("res://scripts/game_settings.gd")
+
 var yaw: float = 0.0
 var pitch: float = -0.18
 var camera: Camera3D
@@ -344,8 +346,12 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func apply_look(relative: Vector2) -> void:
 	manual_look_time = 1.8
-	yaw -= relative.x*0.003
-	pitch = clampf(pitch-relative.y*0.003,-1.05,0.45)
+	# Sensitivity and inversion are live settings, so changing them in the pause
+	# menu affects the very next mouse movement without rebuilding the rig.
+	var scale := 0.003 * clampf(GameSettings.mouse_sensitivity, 0.2, 3.0)
+	var vertical := 1.0 if GameSettings.invert_y else -1.0
+	yaw -= relative.x*scale
+	pitch = clampf(pitch+relative.y*scale*vertical,-1.05,0.45)
 
 func _process(dt: float) -> void:
 	var driving := target.vehicle != null

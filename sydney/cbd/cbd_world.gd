@@ -78,6 +78,7 @@ const RAIL_CORRIDOR_POLYLINE: Array[Vector2] = [
 ]
 const CbdLandmarks := preload("res://sydney/cbd/cbd_landmarks.gd")
 const CbdRetail := preload("res://sydney/cbd/cbd_retail.gd")
+const CbdBusinesses := preload("res://sydney/cbd/cbd_businesses.gd")
 const CbdPetrol := preload("res://sydney/cbd/cbd_petrol.gd")
 const CbdSupermarkets := preload("res://sydney/cbd/cbd_supermarkets.gd")
 const CbdStreetSigns := preload("res://sydney/cbd/cbd_street_signs.gd")
@@ -109,6 +110,11 @@ var greenery_stats: Dictionary = {}
 var presentation_data: Dictionary = {}
 
 
+## Buildings that actually exist in the scene, for presentation layers.
+func present_data() -> Dictionary:
+	return presentation_data if not presentation_data.is_empty() else data
+
+
 func load_world(path: String = STAGE_B_PATH) -> bool:
 	var ok: bool = super(path)
 	if ok:
@@ -127,9 +133,20 @@ func _build() -> void:
 	var elapsed := (Time.get_ticks_usec() - start) / 1000.0
 	build_times_ms["CBDLandmarks"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+	# Real OSM business POIs are the source of truth for chain storefronts. The
+	# parody retail layer still dresses blocks that have no mapped chain, but it
+	# keeps clear of every real placement.
+	start = Time.get_ticks_usec()
+	var businesses := CbdBusinesses.new()
+	businesses.build(present_data())
+	add_child(businesses)
+	geometry_counts["BusinessPOIs"] = businesses.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["BusinessPOIs"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 	start = Time.get_ticks_usec()
 	var retail := CbdRetail.new()
-	retail.build(data)
+	retail.build(data, businesses.placed_points())
 	add_child(retail)
 	geometry_counts["RetailChains"] = retail.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -505,7 +522,7 @@ func _build_buildings() -> void:
 		if _clears_town_hall_forecourt(row):
 			removed_town_hall_infill += 1
 			continue
-		if _intersects_rail_corridor(row):
+		if _intersects_rail_corridor(row) or _intersects_surface_rail_corridor(row):
 			removed_rail_corridor += 1
 			continue
 		rows.append(row)
@@ -564,6 +581,10 @@ func _build_buildings() -> void:
 		var shape := ConcavePolygonShape3D.new()
 		# Same engine-boundary winding conversion as every other building mesh.
 		shape.set_faces(SydneyMesh.engine_building_faces(faces))
+		# Building shells are closed solids but the concave hull is a thin
+		# triangle surface. Back-face collision stops a body that ends up inside
+		# a wall from falling out through it, without adding a second collider.
+		shape.backface_collision = true
 		collider.shape = shape
 		body.add_child(collider)
 
@@ -615,6 +636,10 @@ func _build_ground() -> void:
 	var mat := SydneyMesh.mat(Color("53574e"))
 	if cut_rect.size.x > 0.0:
 		_build_descent_cut_ground(cut_path, cut_rect, mat)
+		# The corridor is a real open cutting, so every road that crosses it
+		# needs a bridge deck. Without one the road ribbon is drawn over a hole
+		# and a vehicle simply drops into the trench.
+		_build_rail_cut_road_decks(cut_path)
 	for i in cells.size():
 		var rect: Rect2 = cells[i]
 		var instance := MeshInstance3D.new()
@@ -725,6 +750,83 @@ func _build_descent_cut_ground(path: Array, cut_rect: Rect2, mat: Material) -> v
 			body.add_child(collider)
 
 
+## Bridge decks where a road crosses the open rail cutting.
+##
+## The road ribbons are visual only; ordinary streets stand on the ground slab,
+## but the slab is absent over the cutting. Each crossing gets one collision box
+## spanning the trench plus a visual slab just below the road surface, aligned to
+## the road so the deck does not sit diagonally across the carriageway. Roads that
+## merely end at the rim do not cross the centreline and get no deck.
+func _build_rail_cut_road_decks(path: Array) -> void:
+	if path.size() < 2:
+		return
+	var half: float = StationInteriorsScript.DESCENT_CUT_HALF_WIDTH + 0.6
+	var body := StaticBody3D.new()
+	body.name = "RailCutRoadDecks"
+	add_child(body)
+	var deck_mat := SydneyMesh.mat(Color("454a47"))
+	var placed: Array[Vector2] = []
+	var count := 0
+	for row: Dictionary in data.get("roads", []):
+		var points: Array = row.get("points", [])
+		if points.size() < 2:
+			continue
+		var road_width := clampf(float(row.get("widthM", 8.0)), 4.0, 26.0)
+		for i in range(points.size() - 1):
+			var p0_raw: Array = points[i]
+			var p1_raw: Array = points[i + 1]
+			if p0_raw.size() < 2 or p1_raw.size() < 2:
+				continue
+			var p0 := Vector2(float(p0_raw[0]), float(p0_raw[1]))
+			var p1 := Vector2(float(p1_raw[0]), float(p1_raw[1]))
+			for j in range(path.size() - 1):
+				var a: Vector2 = path[j]
+				var b: Vector2 = path[j + 1]
+				var hit: Variant = Geometry2D.segment_intersects_segment(p0, p1, a, b)
+				if hit == null:
+					continue
+				var crossing: Vector2 = hit
+				var duplicate := false
+				for other: Vector2 in placed:
+					if other.distance_to(crossing) < 2.5:
+						duplicate = true
+						break
+				if duplicate:
+					continue
+				placed.append(crossing)
+				var road_dir := (p1 - p0)
+				if road_dir.length_squared() < 0.0001:
+					continue
+				road_dir = road_dir.normalized()
+				var cut_dir := (b - a).normalized()
+				# Length along the road needed to clear the trench. Oblique
+				# crossings need a longer deck than perpendicular ones.
+				var sine := absf(road_dir.dot(Vector2(-cut_dir.y, cut_dir.x)))
+				var length := clampf((half * 2.0) / maxf(0.4, sine), half * 2.0, 46.0)
+				var yaw := atan2(road_dir.x, road_dir.y)
+				var center := Vector3(crossing.x, -0.5, crossing.y)
+				var size := Vector3(road_width, 1.0, length)
+				var deck := MeshInstance3D.new()
+				deck.name = "RailCutRoadDeck_%d" % count
+				var mesh := BoxMesh.new()
+				mesh.size = size
+				deck.mesh = mesh
+				deck.material_override = deck_mat
+				deck.position = center + Vector3.UP * -0.01
+				deck.rotation.y = yaw
+				add_child(deck)
+				var collider := CollisionShape3D.new()
+				var shape := BoxShape3D.new()
+				shape.size = size
+				collider.shape = shape
+				collider.position = center
+				collider.rotation.y = yaw
+				body.add_child(collider)
+				count += 1
+	if count == 0:
+		body.queue_free()
+
+
 func _emit_ground_quad(surface: SurfaceTool, faces: PackedVector3Array,
 		a: Vector2, b: Vector2, c: Vector2, d: Vector2, y: float) -> void:
 	var pa := Vector3(a.x, y, a.y)
@@ -832,6 +934,93 @@ func _intersects_rail_corridor(row: Dictionary) -> bool:
 		if _distance_point_to_segment(center, a, b) <= clearance:
 			return true
 	return false
+
+
+## The exposed Central-Redfern approach is a real rail reserve in OSM, but the
+## Stage B block subdivision does not know about it and generated infill parcels
+## across the tracks. The old corridor filter ended at Wynyard, so those parcels
+## stayed: a generated block sat across the running line near Redfern and its
+## wall closed off the view out of the Central tunnel. Clear only footprints
+## that actually touch the reserve; a centroid/radius test this far south would
+## hollow out whole Haymarket blocks.
+const SOUTH_RAIL_CLEARANCE_M := 8.0
+const SOUTH_RAIL_WAY := "way/136259642"
+const REDFERN_POINT := Vector2(-858.1, 2130.0)
+
+var _south_rail_corridor: Array[Vector2] = []
+
+
+func _south_rail_corridor_points() -> Array[Vector2]:
+	if not _south_rail_corridor.is_empty():
+		return _south_rail_corridor
+	var path := "res://sydney/railway/milsons_redfern.json"
+	if not FileAccess.file_exists(path):
+		return _south_rail_corridor
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return _south_rail_corridor
+	for way: Dictionary in parsed.get("ways", []):
+		if str(way.get("osmId", "")) != SOUTH_RAIL_WAY:
+			continue
+		var points: Array[Vector2] = []
+		var stop := -1
+		var best := INF
+		var index := 0
+		for raw: Array in way.get("pointsXZ", []):
+			if raw.size() < 2:
+				continue
+			var point := Vector2(float(raw[0]), float(raw[1]))
+			points.append(point)
+			var distance := point.distance_squared_to(REDFERN_POINT)
+			if distance < best:
+				best = distance
+				stop = index
+			index += 1
+		if stop >= 0:
+			points = points.slice(0, stop + 1)
+		# The alignment data stops ~60 m short of the Redfern platform and the
+		# route joins the station point with a straight connector. Include that
+		# connector or a generated block over the station survives the cull.
+		points.append(REDFERN_POINT)
+		_south_rail_corridor = points
+		break
+	return _south_rail_corridor
+
+
+## Footprint-versus-reserve test. A parcel is cleared when one of its corners is
+## within the ballast clearance of the centreline, or when the centreline runs
+## inside the parcel (a large block spanning the cutting).
+func _intersects_surface_rail_corridor(row: Dictionary) -> bool:
+	var ring: Array = row.get("ring", [])
+	if ring.size() < 3:
+		return false
+	var corridor := _south_rail_corridor_points()
+	if corridor.size() < 2:
+		return false
+	var polygon: Array[Vector2] = []
+	for point: Array in ring:
+		polygon.append(Vector2(float(point[0]), float(point[1])))
+	for vertex in polygon:
+		for i in range(corridor.size() - 1):
+			if _distance_point_to_segment(vertex, corridor[i], corridor[i + 1]) <= SOUTH_RAIL_CLEARANCE_M:
+				return true
+	for point in corridor:
+		if _point_in_ring(point, polygon):
+			return true
+	return false
+
+
+func _point_in_ring(point: Vector2, ring: Array[Vector2]) -> bool:
+	var inside := false
+	var count := ring.size()
+	for i in count:
+		var a := ring[i]
+		var b := ring[(i + 1) % count]
+		if (a.y > point.y) != (b.y > point.y):
+			var crossing_x := a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y)
+			if point.x < crossing_x:
+				inside = not inside
+	return inside
 
 
 func _distance_point_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:

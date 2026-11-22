@@ -34,6 +34,7 @@ const EmergencyIncidentManagerScript := preload("res://sydney/ecosystem/emergenc
 const AmbientAudioDirectorScript := preload("res://sydney/ecosystem/ambient_audio_director.gd")
 const WorldSimulationDirectorScript := preload("res://sydney/ecosystem/world_simulation_director.gd")
 const MainMenuScript := preload("res://scripts/main_menu.gd")
+const PauseMenuScript := preload("res://scripts/pause_menu.gd")
 const VehicleTrafficControllerScript := preload("res://sydney/ecosystem/vehicle_traffic_controller.gd")
 const VehicleVisualBuilderScript := preload("res://sydney/ecosystem/vehicle_visual_builder.gd")
 
@@ -68,6 +69,8 @@ const SHOWCASE_CARS := [
 
 var cbd_world
 var world_sim
+var pause_menu: CanvasLayer
+var _return_to_menu_pending := false
 
 
 func _sydney_requested() -> bool:
@@ -205,7 +208,51 @@ func _ready() -> void:
 	var time_mgr := get_node_or_null("WorldTimeManager")
 	if time_mgr != null:
 		time_mgr.set_time(11.0)
+	if _menu_allowed():
+		GameSettingsScript.load_settings()
+		GameSettingsScript.apply()
 	_maybe_show_main_menu()
+
+
+## Esc pauses the real game. Headless suites and capture tools keep the base
+## district behaviour (mouse capture toggle) so they do not freeze on a frame.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and _menu_allowed() and pause_menu == null:
+		if get_node_or_null("MainMenu") != null:
+			return
+		_open_pause_menu()
+		get_viewport().set_input_as_handled()
+		return
+	super._unhandled_input(event)
+
+
+func _open_pause_menu() -> void:
+	pause_menu = PauseMenuScript.new()
+	pause_menu.name = "PauseMenu"
+	add_child(pause_menu)
+	pause_menu.connect("closed", Callable(self, "_on_pause_closed"))
+	pause_menu.connect("return_requested", Callable(self, "_on_pause_return"))
+	get_tree().paused = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+func _on_pause_closed() -> void:
+	pause_menu = null
+	get_tree().paused = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	if _return_to_menu_pending:
+		_return_to_menu_pending = false
+		call_deferred("_reload_to_menu")
+
+
+func _on_pause_return() -> void:
+	_return_to_menu_pending = true
+
+
+## Reloading the canonical scene returns to the opening time/spawn menu; the
+## menu is presented by `_maybe_show_main_menu()` on the fresh scene.
+func _reload_to_menu() -> void:
+	get_tree().reload_current_scene()
 
 
 ## The opening menu is part of the playable entry point only. Test suites,

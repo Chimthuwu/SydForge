@@ -76,6 +76,13 @@ var impact_cooldown := 0.0
 var velocity_before := Vector3.ZERO
 var _blocked_msg_shown := false
 var destroyed: bool = false
+## Real dynamic headlights for every enterable car, not just emissive lamp
+## meshes. Beams are off by default and switched on by the driver (F), with an
+## automatic on at night when entering so a fresh car is immediately usable.
+var headlights_on := false
+var headlight_spots: Array[SpotLight3D] = []
+var headlight_lenses: Array[MeshInstance3D] = []
+var _headlight_lens_material: StandardMaterial3D
 
 const SLIDE_MIN := 3.0
 
@@ -158,6 +165,70 @@ func _ready() -> void:
 	setup_engine_audio()
 	setup_boost_audio()
 	add_to_group("vehicles")
+	_build_headlights()
+
+
+func _build_headlights() -> void:
+	_headlight_lens_material = StandardMaterial3D.new()
+	_headlight_lens_material.albedo_color = Color("fff2b2")
+	_headlight_lens_material.emission_enabled = true
+	_headlight_lens_material.emission = Color("fff1c8")
+	_headlight_lens_material.emission_energy_multiplier = 0.0
+	var offsets: Array[float] = []
+	if is_motorbike:
+		offsets.append(0.0)
+	else:
+		offsets.append(-0.62)
+		offsets.append(0.62)
+	for x: float in offsets:
+		var spot := SpotLight3D.new()
+		spot.name = "HeadlightBeam" if absf(x) < 0.01 else ("HeadlightBeamL" if x < 0.0 else "HeadlightBeamR")
+		spot.position = Vector3(x, 0.82, -2.02)
+		spot.light_color = Color("fff1cf")
+		spot.light_energy = 4.2
+		spot.spot_range = 38.0
+		spot.spot_angle = 31.0
+		spot.spot_attenuation = 1.1
+		# Headlights are a gameplay readability aid, never a second shadow
+		# pass; five parked cars would otherwise add ten shadow casters.
+		spot.shadow_enabled = false
+		spot.visible = false
+		add_child(spot)
+		headlight_spots.append(spot)
+		var lens := Art.box(self, Vector3(x, 0.85, -2.13), Vector3(0.34, 0.16, 0.05), Color("fff2b2"))
+		lens.material_override = _headlight_lens_material
+		lens.name = "HeadlightLens"
+		headlight_lenses.append(lens)
+	_apply_headlights()
+
+
+func _apply_headlights() -> void:
+	for spot: SpotLight3D in headlight_spots:
+		spot.visible = headlights_on
+	if _headlight_lens_material != null:
+		_headlight_lens_material.emission_energy_multiplier = 2.8 if headlights_on else 0.0
+
+
+func toggle_headlights() -> void:
+	set_headlights(not headlights_on)
+
+
+func set_headlights(on: bool) -> void:
+	headlights_on = on
+	_apply_headlights()
+
+
+func is_headlights_on() -> bool:
+	return headlights_on
+
+
+## Night is owned by the district's WorldTimeManager. Reading it through the
+## player's world avoids a second clock and keeps the auto-on rule in one place.
+func _is_night() -> bool:
+	if driver == null or driver.world == null:
+		return false
+	var clock: Node = driver.world.get_node_or_null("WorldTimeManager")
+	return clock != null and bool(clock.get("is_night"))
 
 
 var rider: Node3D
@@ -589,6 +660,10 @@ func enter(player: BoomPlayer) -> bool:
 		player.remove_meta("skateboard")
 	driver = player
 	player.vehicle = self
+	# The on-foot torch must not keep shining through the windscreen.
+	if bool(player.get("flashlight_on")) and player.has_method("toggle_flashlight"):
+		player.call("toggle_flashlight")
+	set_headlights(_is_night())
 	if is_motorbike:
 		_build_rider()
 	player.visible = false
@@ -626,6 +701,7 @@ func exit_vehicle() -> bool:
 			player.collision_layer = 1
 			player.collision_mask = 1
 			player.world.rig.arm.remove_excluded_object(get_rid())
+			set_headlights(false)
 			return true
 	driver.world.message = "Exit blocked · move to an open area"
 	return false

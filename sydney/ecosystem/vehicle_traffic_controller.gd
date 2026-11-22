@@ -46,6 +46,9 @@ var is_night: bool = false
 var is_yielding: bool = false
 var lighting_factor: float = 0.0
 var _light_distance_timer: float = 0.0
+## Set by CityLightsManager once it owns the AI headlight budget. Without it a
+## crowded street ends up with two live lights per car inside 110 m.
+var _light_budget_managed: bool = false
 var collision_shape: CollisionShape3D
 var engine_audio_system: EngineAudio
 var siren_audio: AudioStreamPlayer3D
@@ -405,7 +408,23 @@ func _update_brake_lights() -> void:
 			mat.emission_enabled = false
 
 
+## Called by CityLightsManager: it ranks every nearby AI car and switches on
+## only the nearest few. A hijacked car keeps managing its own lights.
+func set_light_budget_managed(value: bool) -> void:
+	_light_budget_managed = value
+
+
+func apply_light_budget(active: bool) -> void:
+	var visible_now := active and lighting_factor > 0.01
+	if spot_light != null:
+		spot_light.visible = visible_now
+	if rear_light != null:
+		rear_light.visible = visible_now
+
+
 func _update_light_visibility() -> void:
+	if _light_budget_managed:
+		return
 	var player := driver as Node3D
 	if player == null:
 		player = get_tree().get_first_node_in_group("player") as Node3D

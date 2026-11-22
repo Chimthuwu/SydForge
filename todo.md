@@ -1,6 +1,14 @@
-# Splooge TODO
+# SydForge TODO
 
 ## Critical / player-facing bugs
+
+- [x] **Roads over the open rail cutting had no deck.** The cutting removes the ground slab; road ribbons crossed the gap and a vehicle fell ~6 m to the cutting floor. `CbdWorld._build_rail_cut_road_decks()` now builds an aligned visual slab and collision box at every road/cut centreline crossing (14 in Stage B, deduplicated). Regression: `tests/rail_cut_road_collision_test.gd` 5/0 (14/14 rays at street level, 3/3 car drops land); full rail suite 2350/0.
+
+- [x] **Real businesses replace authored retail as the source of truth.** `sydney/world/businesses.json` holds 189 OSM POIs in the Stage B bounds with ODbL attribution; `cbd_businesses.gd` places 131 storefronts on contained/nearest facades, skips heritage landmarks and reports the 35 skipped OSM ids. McDonald's 11, KFC 7, 7-Eleven 10, Woolworths 16, Coles 7 all found. The parody retail layer now stays 18 m clear of real placements. See `docs/BUSINESS_POIS.md`.
+
+- [x] **Player vehicle headlights.** Every enterable `ArcadeCar` has two real front spot beams (one on the motorbike), switched by F while driving; entering at night turns them on and switches off the on-foot torch. `tests/vehicle_headlights_test.gd` 32/0.
+
+- [x] **Pause menu completed.** Added respawn, return-to-menu, music/SFX volume, mouse sensitivity, invert-Y, fullscreen, AI-headlight density and a remappable controls screen. Settings persist in `user://settings.cfg`. `tests/settings_input_test.gd` 12/0, `tests/lighting_pause_test.gd` 17/0.
 
 - [x] **Fix the open hole in the ground near the Harbour Bridge / rail tunnel approach.** The ground was cut with 16 m axis-aligned squares for a curved rail cutting, so the holes overhung the trench by up to 8 m and rotated corners opened more than 22 m across the track. The cutting floor had visual geometry but no collision, and per-segment floor boxes left wedges at curve joints. Fixed by:
   - cutting one corridor-shaped ground opening along `StationInteriors.descent_cut_path()` (`cbd_world.gd::_build_descent_cut_ground`), starting at the descent portal instead of 40 m below it;
@@ -69,9 +77,17 @@
 - [x] Headless canonical scene — 0 script errors at last run; real-game boot with the menu quit cleanly after 600 frames with no script errors.
 - [ ] Keep both gameplay harnesses green after the hole/facade fixes; add explicit grind and explosion-chain regression assertions.
 
+## Remaining from the fidelity brief
+
+- [ ] **Priority 1 terrain.** Stage B still has no elevation block. Real data is available (the Inner West district already uses public-domain AWS/Mapzen terrarium tiles in `sydney/world/inner_west/height.bin`), but a correct pass needs the ground, road/footpath ribbons, building foundations, parks, street furniture and collisions all re-based onto the grid while preserving the Harbour Bridge, Opera House and authored station elevations. Not attempted in this pass; no noise terrain was shipped.
+- [ ] **Priority 2 landmark/station depth.** Central still has the authored sandstone frontage, clock tower and four platform canopies, but not the full concourse/forecourt/multi-platform complex. Circular Quay, Darling Harbour, Town Hall, QVB, St Mary's and Hyde Park remain at their previous authored level.
+- [ ] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout.
+- [ ] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach.
+
 ## Repo state / notes
 
-- Last commit: `34d5984` (pushed to `origin/main`). Working-tree changes from this pass are uncommitted.
+- Last commit: `34d5984` (pushed to `origin/main`). Working-tree changes from this pass are uncommitted; no commits were requested.
+- New business data is produced offline from Overpass; raw downloads and fetch/process scripts stay in gitignored `data_raw/`. The game reads only `res://sydney/world/businesses.json`.
 - Street rendering fix is in `shaders/asphalt.gdshader`; tree clearance in `sydney/cbd/cbd_greenery.gd`; Parramatta extension is data-only in `sydney/world/stage_b/world.json` (provenance noted in its `limitations`).
 - Handoff notes: `docs/GAMEPLAY_OVERHAUL_HANDOFF.md`, `docs/CYBERPUNK_ASSET_GAP.md`.
 - Inner West exists as a separate playtest district (`sydney/sydney_inner_west_test.tscn`, King Street, Newtown), but its world build walks ~23.6k footpaths and ~27.5k buildings synchronously and does not complete in a practical time in this environment, so it is not offered in the menu. Its rail ribbon call had a nested-array bug that aborted rail construction; that call is fixed, but the district still needs a build-time budget pass before it can be a spawn.
