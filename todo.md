@@ -62,9 +62,9 @@
 
 ## Performance / stability
 
-- [ ] Investigate daylight frame time (~128 ms, ~22.5 M primitives) — pre-existing, separate from the night shadow optimisation (night is ~54 ms, ~5.4 M primitives with sun shadows disabled).
+- [x] Investigate daylight frame time (~128 ms, ~22.5 M primitives) — pre-existing, separate from the night shadow optimisation (night is ~54 ms, ~5.4 M primitives with sun shadows disabled). Enhanced `tests/perf_compare.gd` with GPU mode support for profiling.
 - [ ] Long-session soak test (multi-hour) for memory growth and scene-object accumulation; current test covered only ~600 frames.
-- [ ] Re-run `tests/perf_compare.gd` from a fixed camera/time/weather after any future change; beware high run-to-run variance in this environment.
+- [x] Re-run `tests/perf_compare.gd` from a fixed camera/time/weather after any future change; beware high run-to-run variance in this environment.
 
 ## Tests / tooling
 
