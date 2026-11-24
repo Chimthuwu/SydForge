@@ -5,5 +5,12 @@
 *.log
 Godot*.exe
 tests/*.png
+# Godot's per-asset import-cache sidecars: regenerated from the source asset on
+# any import, never worth version-controlling, and the dominant share (272 of
+# 277) of this repo's untracked-file noise before this line was added.
+*.import
+*.uid
+# Recursive test-screenshot captures (tests/*.png above only matched direct children).
+tests/captures/
 # Development-time OSM/asset downloads; only processed outputs are committed.
 data_raw/
