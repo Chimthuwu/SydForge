@@ -32,35 +32,17 @@ func _run() -> void:
 	if tm != null: tm.set_time(hour)
 	if wm != null: wm.set_weather_by_name("light_rain", true)
 	
-	if gpu_mode:
-		# Create a real viewport for GPU metrics
-		var vp := SubViewport.new()
-		vp.size = Vector2i(1280, 720)
-		vp.render_target_v_flip = true
-		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-		vp.current = true
-		scene.add_child(vp)
-		
-		review = Camera3D.new()
-		review.fov = 62.0
-		review.far = 8000.0
-		vp.add_child(review)
-		review.current = true
-		review.global_position = Vector3(-60.0, 1.75, -300.0)
-		review.look_at(Vector3(-60.0, 2.4, -380.0), Vector3.UP)
-		if scene.player != null:
-			scene.player.global_position = Vector3(-60.0, 0.4, -300.0)
-	else:
-		# Headless mode: just set up camera for consistency
-		review = Camera3D.new()
-		review.fov = 62.0
-		review.far = 8000.0
-		scene.add_child(review)
-		review.current = true
-		review.global_position = Vector3(-60.0, 1.75, -300.0)
-		review.look_at(Vector3(-60.0, 2.4, -380.0), Vector3.UP)
-		if scene.player != null:
-			scene.player.global_position = Vector3(-60.0, 0.4, -300.0)
+	# Use the real viewport camera in both modes: a SubViewport is not composited
+	# into the window, so its draws never reach Performance's render monitors.
+	review = Camera3D.new()
+	review.fov = 62.0
+	review.far = 8000.0
+	scene.add_child(review)
+	review.current = true
+	review.global_position = Vector3(-60.0, 1.75, -300.0)
+	review.look_at(Vector3(-60.0, 2.4, -380.0), Vector3.UP)
+	if scene.player != null:
+		scene.player.global_position = Vector3(-60.0, 0.4, -300.0)
 	
 	await _frames(120)
 

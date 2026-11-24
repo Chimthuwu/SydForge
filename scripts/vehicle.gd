@@ -49,6 +49,15 @@ const VehicleCombatScript := preload("res://scripts/vehicle_combat.gd")
 var health: float = 120.0
 var speed: float = 0.0
 var driver: BoomPlayer
+## AI driving hook (race opponents etc). When true, the car reads ai_forward/
+## ai_turn/ai_handbrake/ai_boost instead of global Input, through the same
+## _axis_forward()/_axis_turn()/_handbrake_pressed()/_boost_pressed() helpers
+## the player path uses — the drivetrain code is otherwise untouched.
+var ai_controlled: bool = false
+var ai_forward: float = 0.0
+var ai_turn: float = 0.0
+var ai_handbrake: bool = false
+var ai_boost: bool = false
 var home: Vector3
 var wheels: Array[MeshInstance3D]
 var wheel_visuals: Array[MeshInstance3D]
@@ -85,6 +94,34 @@ var headlight_lenses: Array[MeshInstance3D] = []
 var _headlight_lens_material: StandardMaterial3D
 
 const SLIDE_MIN := 3.0
+
+
+func _is_occupied() -> bool:
+	return driver != null or ai_controlled
+
+
+func _axis_forward() -> float:
+	if ai_controlled:
+		return ai_forward
+	return Input.get_axis("back","forward") if driver != null else 0.0
+
+
+func _axis_turn() -> float:
+	if ai_controlled:
+		return ai_turn
+	return Input.get_axis("left","right") if driver != null else 0.0
+
+
+func _handbrake_pressed() -> bool:
+	if ai_controlled:
+		return ai_handbrake
+	return Input.is_action_pressed("jump") and driver != null
+
+
+func _boost_requested() -> bool:
+	if ai_controlled:
+		return ai_boost
+	return Input.is_action_pressed("sprint") and driver != null
 
 
 func _ready() -> void:
@@ -335,8 +372,8 @@ func _process(dt: float) -> void:
 		if combat != null:
 			combat.update(dt)
 		return
-	var occupied := driver != null and health > 0
-	var throttle := maxf(0.0, Input.get_axis("back","forward")) if occupied else 0.0
+	var occupied := _is_occupied() and health > 0
+	var throttle := maxf(0.0, _axis_forward()) if occupied else 0.0
 	engine_rpm = EngineAudio.gear_rpm(speed, top_speed)
 	if is_motorbike and wheelie_active:
 		engine_rpm = minf(1.0, engine_rpm + 0.18)
@@ -405,8 +442,8 @@ func _physics_process(dt: float) -> void:
 
 ## ---- input interpretation ----
 func _input_and_boost_state(dt: float) -> void:
-	handbrake = Input.is_action_pressed("jump") and driver != null
-	boost_on = Input.is_action_pressed("sprint") and driver != null and not handbrake \
+	handbrake = _handbrake_pressed()
+	boost_on = _boost_requested() and not handbrake \
 		and boost_amount > 0.0001
 	if handbrake:
 		boost_factor = move_toward(boost_factor, 0.0, 10.0*dt)
@@ -420,7 +457,7 @@ func _input_and_boost_state(dt: float) -> void:
 
 
 func _speed_control(dt: float) -> void:
-	var axis := Input.get_axis("back","forward") if driver != null else 0.0
+	var axis := _axis_forward()
 	var top := top_speed
 	if boost_on:
 		top += top_speed*boost_speed_factor*clampf(boost_factor, 0.05, 1.0)
@@ -437,7 +474,7 @@ func _speed_control(dt: float) -> void:
 		## into geometry; when steering into the slide, the slide is the point
 		## and the lateral momentum is preserved.
 		speed = move_toward(speed, 0.0, handbrake_decel*dt)
-		var turn_in := Input.get_axis("left","right") if driver != null else 0.0
+		var turn_in := _axis_turn()
 		var coast_scrub := 0.9 if absf(turn_in) <= 0.2 else 0.0
 		var fwd_v := velocity.dot(_forward())
 		if coast_scrub != 0.0 and fwd_v != 0.0:
@@ -454,7 +491,7 @@ func _speed_control(dt: float) -> void:
 
 func _steering(dt: float) -> void:
 	var speed_a := speed
-	var turn_input := Input.get_axis("left","right") if driver != null else 0.0
+	var turn_input := _axis_turn()
 	var turn_rate := 0.0
 	if handbrake:
 		## During the handbrake the player steers through the slide.
@@ -473,13 +510,15 @@ func tipping_now() -> bool:
 
 
 func braking() -> bool:
+	if ai_controlled:
+		return handbrake or ai_forward < 0.0 and speed != 0.0
 	return handbrake or Input.is_action_pressed("back") and speed != 0.0
 
 
 func _suspension(dt: float) -> void:
 	## Visual weight transfer: the body pitches as acceleration/braking load
 	## shifts.
-	var axis := Input.get_axis("back","forward") if driver != null else 0.0
+	var axis := _axis_forward()
 	var sus_target := 0.0
 	if handbrake:
 		sus_target = 0.04
@@ -591,7 +630,7 @@ func _drag_tips(dt: float) -> void:
 func _auto_unroll(dt: float) -> void:
 	## A driver-less car whose flip is fully upside down pops back up after
 	## auto_unroll_delay so a crash never strands the vehicle permanently.
-	if driver != null:
+	if _is_occupied():
 		return
 	if absf(roll) > roll_max*1.35 and speed == 0.0:
 		roll = move_toward(roll, 0.0, 2.5*dt)

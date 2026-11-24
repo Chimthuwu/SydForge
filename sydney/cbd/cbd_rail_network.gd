@@ -764,6 +764,19 @@ func get_station_route_index(station_id: String) -> int:
 	return int(station_route_indices.get(station_id, -1))
 
 
+## Yaw (radians, same convention as the tunnel/portal builders) of the track
+## at a station's route index. StationInteriors uses this to align its
+## axis-aligned platform/shaft geometry with the bore instead of world axes;
+## on a curving approach (e.g. Wynyard) the mismatch built a station platform
+## wall across the tunnel, dead-ending the bore.
+func get_station_route_yaw(station_id: String) -> float:
+	var route_index := int(station_route_indices.get(station_id, -1))
+	if route_index < 0 or route_index >= main_route_points.size():
+		return 0.0
+	var forward := _route_direction(route_index)
+	return atan2(-forward.x, -forward.z)
+
+
 func _count_tunnel_segments() -> int:
 	var count := 0
 	for i in range(main_route_points.size() - 1):

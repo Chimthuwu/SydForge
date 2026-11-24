@@ -19,6 +19,15 @@ var junctions: Array[Dictionary] = []
 var crossings: Array[Dictionary] = []
 var _signal_cycle_time: float = 0.0
 
+## Per-car-per-tick lookups used to cost ~14 ms/frame scanning every junction
+## (2,517) and crossing (9,751) in the city on every car's physics tick (see
+## docs/PERFORMANCE_AUDIT_2026-11-24.md §2). Both queries only ever care about
+## entries within ~24 m, so a 50 m grid bucketed once in setup() turns that
+## into a 3x3-cell lookup instead of a city-wide linear scan.
+const _CELL_SIZE := 50.0
+var _junction_cells: Dictionary = {}
+var _crossing_cells: Dictionary = {}
+
 # Time-of-day profile
 var current_period: String = "morning"
 var activity_period: String = "morning"
@@ -62,12 +71,36 @@ func is_road_blocked(position: Vector3) -> bool:
 ## Crossings are indexed from the world export. Cars slow within 12 m of a
 ## zebra they are heading toward, whether or not a signal is installed.
 func should_slow_for_crossing(position: Vector3, heading: Vector3) -> bool:
-	for crossing in crossings:
+	for crossing in _nearby_cells(_crossing_cells, position):
 		var offset: Vector3 = crossing["pos"] - position
 		var dist := offset.length()
 		if dist > 1.0 and dist < 12.0 and heading.dot(offset / dist) > 0.55:
 			return true
 	return false
+
+
+func _cell_key(pos: Vector3) -> Vector2i:
+	return Vector2i(int(floor(pos.x / _CELL_SIZE)), int(floor(pos.z / _CELL_SIZE)))
+
+
+func _bucket_add(cells: Dictionary, entry: Dictionary) -> void:
+	var key := _cell_key(entry["pos"])
+	if not cells.has(key):
+		cells[key] = []
+	cells[key].append(entry)
+
+
+## 3x3 neighbourhood around `pos`'s cell — enough margin for the 24 m-radius
+## junction query and the 12 m-radius crossing query against a 50 m cell.
+func _nearby_cells(cells: Dictionary, pos: Vector3) -> Array:
+	var center := _cell_key(pos)
+	var result: Array = []
+	for dx in range(-1, 2):
+		for dz in range(-1, 2):
+			var bucket: Array = cells.get(Vector2i(center.x + dx, center.y + dz), [])
+			if not bucket.is_empty():
+				result.append_array(bucket)
+	return result
 
 
 func warn_nearby(position: Vector3, radius: float) -> void:
@@ -245,30 +278,36 @@ func _index_roads() -> void:
 func _index_junctions_and_crossings() -> void:
 	junctions.clear()
 	crossings.clear()
+	_junction_cells.clear()
+	_crossing_cells.clear()
 	if sydney_world == null or not ("data" in sydney_world):
 		return
-	
+
 	# Index major intersections
 	var raw_junctions: Array = sydney_world.data.get("junctions", [])
 	for j in raw_junctions:
 		var road_count: int = int(j.get("roadCount", 0))
 		if road_count >= 3: # 3-way or 4-way intersections
-			junctions.append({
+			var entry := {
 				"id": j.get("id"),
 				"pos": Vector3(float(j.get("x", 0.0)), 0.2, float(j.get("z", 0.0))),
 				"road_count": road_count,
 				"district": str(j.get("district", ""))
-			})
+			}
+			junctions.append(entry)
+			_bucket_add(_junction_cells, entry)
 
 	# Index pedestrian crossings
 	var raw_crossings: Array = sydney_world.data.get("crossings", [])
 	for c in raw_crossings:
-		crossings.append({
+		var entry := {
 			"id": c.get("id"),
 			"pos": Vector3(float(c.get("x", 0.0)), 0.2, float(c.get("z", 0.0))),
 			"length": float(c.get("lengthM", 12.0)),
 			"road_id": str(c.get("roadId", ""))
-		})
+		}
+		crossings.append(entry)
+		_bucket_add(_crossing_cells, entry)
 
 
 func _process(delta: float) -> void:
@@ -301,9 +340,9 @@ func _process(delta: float) -> void:
 func is_signal_red_for_position(car_pos: Vector3, car_heading: Vector3) -> bool:
 	if junctions.is_empty():
 		return false
-	
+
 	# Check if vehicle is approaching a junction
-	for j in junctions:
+	for j in _nearby_cells(_junction_cells, car_pos):
 		var j_pos: Vector3 = j["pos"]
 		var d := car_pos.distance_to(j_pos)
 		if d > 6.0 and d < 24.0:

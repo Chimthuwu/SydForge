@@ -170,22 +170,25 @@ func _build_station(spec: Dictionary, railway: Node3D, world_data: Dictionary) -
 	# Wynyard is ~15 m west of the OSM station node. Dress the platform at the
 	# track, not at the concourse centre, or the two platform volumes overlap.
 	var rail_anchor: Vector3 = Vector3(float(spec["x"]), 0.0, float(spec["z"]))
+	var rail_yaw := 0.0
 	if railway != null and railway.has_method("get_station_route_index"):
 		var route_index := int(railway.call("get_station_route_index", str(spec["id"])))
 		var route: Array = railway.get("main_route_points")
 		if route_index >= 0 and route_index < route.size():
 			rail_anchor = route[route_index]
+		if railway.has_method("get_station_route_yaw"):
+			rail_yaw = float(railway.call("get_station_route_yaw", str(spec["id"])))
 
 	var kind := str(spec.get("kind", "surface"))
 	if kind == "underground":
-		_build_underground_station(station, spec, rail_anchor)
+		_build_underground_station(station, spec, rail_anchor, rail_yaw)
 	elif kind == "elevated":
 		_build_surface_station(station, spec, float(spec.get("elevation", 12.0)))
 	else:
 		_build_surface_station(station, spec, 0.25)
 
 
-func _build_underground_station(root: Node3D, spec: Dictionary, rail_anchor: Vector3) -> void:
+func _build_underground_station(root: Node3D, spec: Dictionary, rail_anchor: Vector3, rail_yaw: float = 0.0) -> void:
 	var depth := float(spec.get("depth", 10.0))
 	var platform_y := -depth
 	var conc_y := -depth * 0.55
@@ -228,6 +231,7 @@ func _build_underground_station(root: Node3D, spec: Dictionary, rail_anchor: Vec
 		rail_anchor.y - root.position.y,
 		rail_anchor.z - root.position.z
 	)
+	platform.rotation.y = rail_yaw
 	root.add_child(platform)
 	StationComponents.platform_dressing(platform, length, float(spec.get("width", 14.0)), str(spec.get("name", "")), true)
 

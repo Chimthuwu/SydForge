@@ -116,6 +116,13 @@ var minimap: MiniMap
 var wanted_label: Label
 var sydney_world: SydneyWorld
 var using_sydney: bool = false
+var race_manager: RaceManager
+var hud_layer: CanvasLayer
+var dev_tools: DevTools
+var network_manager: NetworkManager
+var deathmatch_manager: DeathmatchManager
+var scoreboard_label: Label
+var scoreboard_visible: bool = false
 
 func _ready() -> void:
 	configure_input()
@@ -152,10 +159,31 @@ func _ready() -> void:
 	nos.name = "NOSOverlay"
 	add_child(nos)
 	nos.setup(player)
+	race_manager = preload("res://scripts/race_manager.gd").new()
+	race_manager.name = "RaceManager"
+	add_child(race_manager)
+	dev_tools = preload("res://scripts/dev_tools.gd").new()
+	dev_tools.name = "DevTools"
+	add_child(dev_tools)
+	dev_tools.setup(self, player, hud_layer)
+	network_manager = preload("res://scripts/network_manager.gd").new()
+	network_manager.name = "NetworkManager"
+	add_child(network_manager)
+	deathmatch_manager = preload("res://scripts/deathmatch_manager.gd").new()
+	deathmatch_manager.name = "DeathmatchManager"
+	add_child(deathmatch_manager)
+	deathmatch_manager.setup(self, player, network_manager)
+	scoreboard_label = Label.new()
+	scoreboard_label.add_theme_font_size_override("font_size", 13)
+	scoreboard_label.add_theme_color_override("font_color", Color("ffe9a8"))
+	scoreboard_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	scoreboard_label.position = Vector2(-220, 46)
+	scoreboard_label.visible = false
+	hud_layer.add_child(scoreboard_label)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G,"wheelie":KEY_B,"skate_boost":KEY_N,"skate_trick":KEY_T}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G,"wheelie":KEY_B,"skate_boost":KEY_N,"skate_trick":KEY_T,"start_race":KEY_Y,"dm_host":KEY_F6,"dm_join":KEY_F7,"dm_scoreboard":KEY_F10}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -220,6 +248,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		message = "MASTER %+d dB" % int(audio.adjust_master_volume(-2.0))
 	if event.is_action_pressed("reset"):
 		player.respawn()
+	if event.is_action_pressed("start_race") and race_manager != null:
+		race_manager.try_start_race(player)
+	if event.is_action_pressed("dm_host") and deathmatch_manager != null:
+		if deathmatch_manager.active:
+			deathmatch_manager.leave()
+			message = "DEATHMATCH · session ended"
+		else:
+			message = "DEATHMATCH · %s" % deathmatch_manager.host()
+	if event.is_action_pressed("dm_join") and deathmatch_manager != null and not deathmatch_manager.active:
+		message = "DEATHMATCH · %s" % deathmatch_manager.join("127.0.0.1")
+	if event.is_action_pressed("dm_scoreboard") and scoreboard_label != null:
+		scoreboard_visible = not scoreboard_visible
+		scoreboard_label.visible = scoreboard_visible
 
 func interact() -> void:
 	if player.in_supermarket != null:
@@ -290,6 +331,8 @@ func _process(dt: float) -> void:
 	if _nearest_timer >= 0.1:
 		_nearest_timer = 0.0
 		find_nearest_vehicle()
+	if scoreboard_visible and deathmatch_manager != null:
+		_set_label_text(scoreboard_label, deathmatch_manager.scoreboard_text())
 	hurt_flash = maxf(0,hurt_flash-dt)
 	hit_time = maxf(0,hit_time-dt)
 	_set_label_text(cross, "×" if hit_time > 0 else "+")
@@ -355,6 +398,7 @@ func _hud_bar_style(color: Color) -> StyleBoxFlat:
 func build_hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
+	hud_layer = layer
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
