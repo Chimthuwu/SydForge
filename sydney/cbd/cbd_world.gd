@@ -99,6 +99,7 @@ const NeonSliceScript := preload("res://sydney/cbd/cbd_neon_slice.gd")
 const NeonCityScript := preload("res://sydney/cbd/cbd_neon_city.gd")
 ## Authored architectural skyline landmarks (facade panels + distinctive crowns).
 const SkylineHeroesScript := preload("res://sydney/cbd/cbd_skyline_heroes.gd")
+const RooflineDressingScript := preload("res://sydney/cbd/cbd_roofline_dressing.gd")
 ## Designed district anchor installations for underdressed areas.
 const DistrictAnchorsScript := preload("res://sydney/cbd/cbd_district_anchors.gd")
 ## Representative CBD architectural rebuild (vertical slice, acceptance gate).
@@ -216,6 +217,15 @@ func _build() -> void:
 	geometry_counts["SkylineHeroes"] = skyline_heroes.stats
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
 	build_times_ms["SkylineHeroes"] = elapsed
+	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
+
+	start = Time.get_ticks_usec()
+	var roofline := RooflineDressingScript.new()
+	roofline.build(present)
+	add_child(roofline)
+	geometry_counts["RooflineDressing"] = roofline.stats
+	elapsed = (Time.get_ticks_usec() - start) / 1000.0
+	build_times_ms["RooflineDressing"] = elapsed
 	build_times_ms["Total"] = float(build_times_ms.get("Total", 0.0)) + elapsed
 
 	start = Time.get_ticks_usec()
