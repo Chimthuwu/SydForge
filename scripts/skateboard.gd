@@ -27,6 +27,8 @@ var board_visual: Node3D
 var rider_visual: Node3D
 
 var _grind_stable := 0.0
+var _launch_this_frame := 0.0
+var _air_vy := 0.0
 var _trick_cooldown := 0.0
 var _jump_buffer := 0.0
 
@@ -131,12 +133,22 @@ func _physics_process(dt: float) -> void:
 			_do_ollie()
 		_handle_tricks(dt)
 		velocity = forward * speed + Vector3.DOWN * 2.0
+		# The board needs real vertical momentum while airborne: the per-frame
+		# rebuild above would otherwise pin velocity.y to -2 and the ollie's
+		# launch arc (and any ledge drop) never happens.
+		if airborne or _launch_this_frame > 0.0:
+			if _launch_this_frame > 0.0:
+				_air_vy = _launch_this_frame
+				_launch_this_frame = 0.0
+			_air_vy = maxf(_air_vy - 24.0 * dt, -32.0)
+			velocity.y = _air_vy
 		velocity.y = maxf(velocity.y, -32.0)
 		move_and_slide()
 		airborne = not is_on_floor()
 		if airborne:
 			airborne_time += dt
 		else:
+			_air_vy = 0.0
 			airborne_time = 0.0
 			ollie = false
 			trick_name = ""
@@ -147,7 +159,8 @@ func _physics_process(dt: float) -> void:
 
 func _do_ollie() -> void:
 	_jump_buffer = 0.0
-	velocity.y = 7.5 if speed > 9.0 else 5.8
+	_launch_this_frame = 7.5 if speed > 9.0 else 5.8
+	velocity.y = _launch_this_frame
 	airborne = true
 	ollie = true
 	airborne_time = 0.0
@@ -205,6 +218,7 @@ func _grind(dt: float, turn: float) -> void:
 	if _jump_buffer > 0.0 or _grind_stable > 3.5:
 		grinding = false
 		_jump_buffer = 0.0
+		_air_vy = 7.0
 		velocity.y = 7.0
 		airborne = true
 		trick_name = "GRIND OUT"
