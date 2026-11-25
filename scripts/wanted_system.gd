@@ -34,15 +34,32 @@ func setup(player: Node3D) -> void:
 ## Called when a foot officer is killed. Escalates heat and alerts nearby units.
 func officer_killed(position: Vector3) -> void:
 	add_crime(22.0, "OFFICER DOWN · police alerted")
-	for car in police:
-		if is_instance_valid(car) and car.global_position.distance_to(position) < 240.0:
-			if car.has_method("set_alert"):
-				car.call("set_alert", position)
+	_alert_nearby_units(position)
 	var incidents := get_tree().get_nodes_in_group("incident_managers")
 	for mgr in incidents:
 		if mgr.has_method("request_police_response"):
 			mgr.call("request_police_response", position, 1.2)
 			break
+
+
+## Called when a police VEHICLE is destroyed. Heavier than a foot officer
+## death: losing a unit brings a serious response (escalation plan scenario 3,
+## heat +75 with immediate backup).
+func police_car_destroyed(position: Vector3) -> void:
+	add_crime(75.0, "POLICE UNIT DOWN · heavy response")
+	_alert_nearby_units(position)
+	var incidents := get_tree().get_nodes_in_group("incident_managers")
+	for mgr in incidents:
+		if mgr.has_method("request_police_response"):
+			mgr.call("request_police_response", position, 2.0)
+			break
+
+
+func _alert_nearby_units(position: Vector3) -> void:
+	for car in police:
+		if is_instance_valid(car) and car.global_position.distance_to(position) < 240.0:
+			if car.has_method("set_alert"):
+				car.call("set_alert", position)
 
 
 func add_crime(amount: float, reason: String = "") -> void:

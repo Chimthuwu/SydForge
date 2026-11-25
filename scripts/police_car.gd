@@ -95,6 +95,74 @@ func set_alert(position: Vector3) -> void:
 	_reaction_delay = minf(_reaction_delay, 0.15)
 
 
+var wrecked := false
+
+
+## Player weapons duck-type on take_damage/take_damage_at; without this the
+## player cannot destroy a police car at all and the wanted system never
+## hears about a lost unit.
+func take_damage(amount: float) -> void:
+	if wrecked:
+		return
+	health = maxf(0.0, health - amount)
+	if health <= 0.0:
+		_wreck()
+
+
+func _wreck() -> void:
+	if wrecked:
+		return
+	wrecked = true
+	var wanted := get_tree().get_first_node_in_group("wanted_system")
+	if wanted != null and wanted.has_method("police_car_destroyed"):
+		wanted.call("police_car_destroyed", global_position)
+	_play_explosion()
+	speed = 0.0
+	velocity = Vector3.ZERO
+	collision_layer = 0
+	collision_mask = 0
+	if _red != null:
+		_red.light_energy = 0.0
+	if _blue != null:
+		_blue.light_energy = 0.0
+	if _siren_audio != null and _siren_audio.playing:
+		_siren_audio.stop()
+	set_physics_process(false)
+	# The wreck stays as a brief obstruction, then clears itself.
+	var cleanup := get_tree().create_timer(14.0)
+	cleanup.timeout.connect(queue_free)
+
+
+func _play_explosion() -> void:
+	var root := Node3D.new()
+	root.name = "WreckExplosion"
+	add_child(root)
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(1.0, 0.62, 0.2)
+	flash.light_energy = 6.0
+	flash.omni_range = 16.0
+	flash.position = Vector3(0.0, 1.2, 0.0)
+	root.add_child(flash)
+	var fireball := MeshInstance3D.new()
+	var sphere := SphereMesh.new()
+	sphere.radius = 1.4
+	sphere.height = 2.8
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(1.0, 0.45, 0.1)
+	mat.emission_enabled = true
+	mat.emission = Color(1.0, 0.5, 0.12)
+	mat.emission_energy_multiplier = 3.0
+	fireball.mesh = sphere
+	fireball.material_override = mat
+	fireball.position = Vector3(0.0, 1.0, 0.0)
+	root.add_child(fireball)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(flash, "light_energy", 0.0, 2.2)
+	tween.tween_property(fireball, "scale", Vector3(0.1, 0.1, 0.1), 2.2)
+	tween.chain().tween_callback(root.queue_free)
+
+
 func _exit_tree() -> void:
 	if _siren_voice_active:
 		_active_siren_voices = maxi(0, _active_siren_voices - 1)

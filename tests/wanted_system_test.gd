@@ -78,6 +78,25 @@ func run() -> void:
 		await process_frame
 	check(wanted.heat < heat_before, "heat decays once contact is broken and cooldown ends")
 
+	# --- Vehicle officer kill (escalation scenario 3): destroying a unit ---
+	wanted.clear()
+	wanted.add_crime(20.0)
+	check(wanted.stars == 1, "fresh crime after decay escalates to tier 1")
+	wanted._spawn_timer = 0.05
+	for _i in 10:
+		await process_frame
+	check(wanted.police.size() == 1, "backup unit spawns for re-escalation")
+	if wanted.police.size() > 0:
+		var unit: Node3D = wanted.police[0]
+		var wreck_pos: Vector3 = unit.global_position
+		unit.call("take_damage", 999.0)
+		check(bool(unit.get("wrecked")), "police car can be destroyed by damage")
+		check(wanted.heat == 95.0 and wanted.stars == 4, "unit destruction adds 75 heat, escalates to tier 4")
+		var perceived_wreck: Vector3 = unit.get("_perceived_target")
+		check(perceived_wreck.distance_to(wreck_pos + Vector3.UP) < 0.05, "destroying a unit alerts nearby units to the wreck")
+		unit.call("take_damage", 50.0)
+		check(bool(unit.get("wrecked")), "wreck ignores further damage")
+
 	# --- Clear ---
 	wanted.clear()
 	check(wanted.stars == 0 and wanted.heat == 0.0 and wanted.police.is_empty(), "clearing wanted removes heat and police")
