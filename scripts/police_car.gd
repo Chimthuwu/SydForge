@@ -84,6 +84,17 @@ func set_pursuit_target(player: Node3D) -> void:
 	target = player
 
 
+## React to a crime/officer-down ping: converge on the position even without
+## line of sight, with a short reaction delay instead of instant superhuman aim.
+func set_alert(position: Vector3) -> void:
+	_perceived_target = position + Vector3.UP * 1.0
+	_last_seen_pos = _perceived_target
+	_has_last_seen = true
+	_lost_sight_time = 0.0
+	_search_time = maxf(_search_time, 8.0)
+	_reaction_delay = minf(_reaction_delay, 0.15)
+
+
 func _exit_tree() -> void:
 	if _siren_voice_active:
 		_active_siren_voices = maxi(0, _active_siren_voices - 1)
@@ -269,9 +280,10 @@ func _can_see_target(distance: float) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(from, to)
 	var exclude: Array = [get_rid()]
 	if target != null:
-		exclude.append(target.get_rid())
+		if target is CollisionObject3D:
+			exclude.append(target.get_rid())
 		var vehicle = target.get("vehicle") if "vehicle" in target else null
-		if vehicle is Node3D and is_instance_valid(vehicle):
+		if vehicle is CollisionObject3D and is_instance_valid(vehicle):
 			exclude.append(vehicle.get_rid())
 	query.exclude = exclude
 	var hit := space.intersect_ray(query)

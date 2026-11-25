@@ -145,6 +145,18 @@ func _player_target_point() -> Vector3:
 	return player_ref.global_position + Vector3.UP * 1.0
 
 
+## Collision RIDs for the player and their vehicle, for raycast exclusion.
+## The player may be a plain Node3D in headless harnesses, which has no RID.
+func _player_rids() -> Array:
+	var rids: Array = []
+	if player_ref != null and is_instance_valid(player_ref) and player_ref is CollisionObject3D:
+		rids.append(player_ref.get_rid())
+		var vehicle = player_ref.get("vehicle") if "vehicle" in player_ref else null
+		if vehicle is Node3D and is_instance_valid(vehicle):
+			rids.append(vehicle.get_rid())
+	return rids
+
+
 func _has_line_of_sight(from_node: Node3D, target_point: Vector3, distance: float) -> bool:
 	if distance > 160.0:
 		return false
@@ -156,11 +168,7 @@ func _has_line_of_sight(from_node: Node3D, target_point: Vector3, distance: floa
 	var from_point := from_node.global_position + Vector3.UP * 1.4
 	var query := PhysicsRayQueryParameters3D.create(from_point, target_point)
 	var exclude: Array = [from_node.get_rid()]
-	if player_ref != null:
-		exclude.append(player_ref.get_rid())
-		var vehicle = player_ref.get("vehicle") if "vehicle" in player_ref else null
-		if vehicle is Node3D and is_instance_valid(vehicle):
-			exclude.append(vehicle.get_rid())
+	exclude.append_array(_player_rids())
 	query.exclude = exclude
 	var hit := space.intersect_ray(query)
 	if hit.is_empty():
@@ -204,11 +212,7 @@ func _is_point_visible_to_player(point: Vector3) -> bool:
 	if space == null:
 		return false
 	var query := PhysicsRayQueryParameters3D.create(origin, point + Vector3.UP * 0.8)
-	var exclude: Array = [player_ref.get_rid()]
-	var vehicle = player_ref.get("vehicle") if "vehicle" in player_ref else null
-	if vehicle is Node3D and is_instance_valid(vehicle):
-		exclude.append(vehicle.get_rid())
-	query.exclude = exclude
+	query.exclude = _player_rids()
 	var hit := space.intersect_ray(query)
 	return hit.is_empty()
 
