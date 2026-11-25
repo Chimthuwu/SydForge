@@ -26,6 +26,11 @@ const STAGE_LABEL := "STAGE B"
 
 const CbdBuildings := preload("res://sydney/cbd/cbd_buildings.gd")
 const CbdGreenery := preload("res://sydney/cbd/cbd_greenery.gd")
+## Bump when CbdBuildings.build()'s result shape changes, so a stale cache
+## from an older build is never loaded silently.
+const CBD_BUILDING_CACHE_VERSION := 1
+## Bump when _build_roads()'s cached lane-markings/kerbs meshes change shape.
+const CBD_ROAD_DRESSING_CACHE_VERSION := 1
 ## Generated parcel fills that overlap the Opera House podium. Most are largely
 ## outside the legacy first-vertex filter even though their footprints intrude
 ## into the authored landmark site.
@@ -529,35 +534,58 @@ func _build_buildings() -> void:
 		presentation_rows.append(row)
 	presentation_data = data.duplicate()
 	presentation_data["buildings"] = presentation_rows
-	var builder = CbdBuildings.new()
-	var result: Dictionary = builder.build(rows, player_spawn)
-	building_stats = result.get("stats", {})
+
+	var cache := _load_cbd_building_cache()
+	if cache == null:
+		var builder = CbdBuildings.new()
+		var result: Dictionary = builder.build(rows, player_spawn)
+		var raw_mesh = result.get("mesh")
+		var faces: PackedVector3Array = result.get("faces", PackedVector3Array())
+		var shape: Shape3D = null
+		if faces.size() >= 3:
+			var concave := ConcavePolygonShape3D.new()
+			# Same engine-boundary winding conversion as every other building mesh.
+			concave.set_faces(SydneyMesh.engine_building_faces(faces))
+			# Building shells are closed solids but the concave hull is a thin
+			# triangle surface. Back-face collision stops a body that ends up
+			# inside a wall from falling out through it, without a second collider.
+			concave.backface_collision = true
+			shape = concave
+		cache = CbdBuildingCacheData.new()
+		cache.mesh = SydneyMesh.engine_building_mesh(raw_mesh) if raw_mesh != null else null
+		cache.night_windows = result.get("nightWindows") as ArrayMesh
+		cache.shape = shape
+		cache.collision_triangles = faces.size() / 3
+		cache.stats = result.get("stats", {})
+		_save_cbd_building_cache(cache)
+
+	building_stats = cache.stats.duplicate() if cache.stats != null else {}
 	building_stats["operaHouseSiteOverlapsRemoved"] = removed_site_overlaps
 	building_stats["authoredLandmarkMasses"] = authored_landmark_masses
 	building_stats["townHallForecourtInfillRemoved"] = removed_town_hall_infill
 	building_stats["railCorridorBuildingsRemoved"] = removed_rail_corridor
-	var mesh = result.get("mesh")
-	if mesh != null:
-		_add_mesh("Buildings", SydneyMesh.engine_building_mesh(mesh))
+	if cache.mesh != null:
+		var instance := MeshInstance3D.new()
+		instance.name = "Buildings"
+		instance.mesh = cache.mesh
+		add_child(instance)
 	var buildings_instance := get_node_or_null("Buildings") as MeshInstance3D
 	if buildings_instance != null:
 		# The merged shell stays cheap; the facade shader supplies window depth,
 		# shopfronts, frames and night lighting without millions of extra tris.
 		buildings_instance.material_override = _facade_material()
 		buildings_instance.add_to_group("facade_surfaces")
-	var night_windows := result.get("nightWindows") as ArrayMesh
-	if night_windows != null and night_windows.get_surface_count() > 0:
+	if cache.night_windows != null and cache.night_windows.get_surface_count() > 0:
 		var windows_instance := MeshInstance3D.new()
 		windows_instance.name = "NightWindows"
-		windows_instance.mesh = night_windows
+		windows_instance.mesh = cache.night_windows
 		# Superseded by the aligned procedural windows in the facade shader.
 		windows_instance.visible = false
 		add_child(windows_instance)
 	var counts: Dictionary = geometry_counts.get("Buildings", {}).duplicate()
-	var faces: PackedVector3Array = result.get("faces", PackedVector3Array())
 	counts["triangles"] = int(building_stats.get("triangles", counts.get("triangles", 0)))
 	counts["vertices"] = int(counts.get("vertices", 0))
-	counts["collisionTriangles"] = faces.size() / 3
+	counts["collisionTriangles"] = cache.collision_triangles
 	counts["built"] = int(building_stats.get("built", 0))
 	counts["skipped"] = int(building_stats.get("skipped", 0))
 	counts["degenerateTriangles"] = int(building_stats.get("degenerateTriangles", 0))
@@ -573,20 +601,34 @@ func _build_buildings() -> void:
 	}
 	if int(building_stats.get("degenerateTriangles", 0)) > 0:
 		push_warning("CbdWorld: %d degenerate facade triangles rejected" % int(building_stats.get("degenerateTriangles", 0)))
-	if faces.size() >= 3:
+	if cache.shape != null:
 		var body := StaticBody3D.new()
 		body.name = "BuildingCollision"
 		add_child(body)
 		var collider := CollisionShape3D.new()
-		var shape := ConcavePolygonShape3D.new()
-		# Same engine-boundary winding conversion as every other building mesh.
-		shape.set_faces(SydneyMesh.engine_building_faces(faces))
-		# Building shells are closed solids but the concave hull is a thin
-		# triangle surface. Back-face collision stops a body that ends up inside
-		# a wall from falling out through it, without adding a second collider.
-		shape.backface_collision = true
-		collider.shape = shape
+		collider.shape = cache.shape
 		body.add_child(collider)
+
+
+func _cbd_building_cache_path() -> String:
+	return "user://cache/cbd_buildings_v%d_%d.res" % [CBD_BUILDING_CACHE_VERSION, _world_text_hash]
+
+
+func _load_cbd_building_cache() -> CbdBuildingCacheData:
+	var path := _cbd_building_cache_path()
+	if not ResourceLoader.exists(path):
+		return null
+	var cache := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if cache is CbdBuildingCacheData:
+		return cache
+	return null
+
+
+func _save_cbd_building_cache(cache: CbdBuildingCacheData) -> void:
+	DirAccess.make_dir_recursive_absolute("user://cache")
+	var err := ResourceSaver.save(cache, _cbd_building_cache_path())
+	if err != OK:
+		push_warning("CbdWorld: failed to write buildings cache (error %d)" % err)
 
 
 ## Presentation overrides only: the shared importer still owns the geometry and
@@ -893,14 +935,52 @@ func _build_roads() -> void:
 	# and crossings sit above (0.10 / 0.12), so the road paint goes just over the
 	# asphalt at 0.075 and the kerb rises to footpath level at 0.10.
 	var painted_roads: Array = OperaHouseLandmark.filtered_roads(data.get("roads", []), landmark_podium)
-	_add_mesh("LaneMarkings", SydneyMesh.road_markings_mesh(painted_roads, 0.075))
-	_add_mesh("Kerbs", SydneyMesh.road_kerb_mesh(painted_roads, 0.06, 0.04))
+
+	var dressing := _load_cbd_road_dressing_cache()
+	if dressing == null:
+		var markings := SydneyMesh.road_markings_mesh(painted_roads, 0.075)
+		var kerbs := SydneyMesh.road_kerb_mesh(painted_roads, 0.06, 0.04)
+		dressing = CbdRoadDressingCacheData.new()
+		dressing.lane_markings_mesh = markings
+		var markings_counted := _count_mesh(markings) if markings != null else {"vertices": 0, "triangles": 0}
+		dressing.lane_markings_vertices = int(markings_counted["vertices"])
+		dressing.lane_markings_triangles = int(markings_counted["triangles"])
+		dressing.kerbs_mesh = kerbs
+		var kerbs_counted := _count_mesh(kerbs) if kerbs != null else {"vertices": 0, "triangles": 0}
+		dressing.kerbs_vertices = int(kerbs_counted["vertices"])
+		dressing.kerbs_triangles = int(kerbs_counted["triangles"])
+		_save_cbd_road_dressing_cache(dressing)
+	if dressing.lane_markings_mesh != null:
+		_add_cached_mesh("LaneMarkings", dressing.lane_markings_mesh, dressing.lane_markings_vertices, dressing.lane_markings_triangles)
+	if dressing.kerbs_mesh != null:
+		_add_cached_mesh("Kerbs", dressing.kerbs_mesh, dressing.kerbs_vertices, dressing.kerbs_triangles)
 	# Footpaths and crossings read as concrete, not the same flat strip as the
 	# carriageway. The same shader with lighter, rougher values is enough.
 	for node_name in ["Footpaths", "Crossings", "Parking"]:
 		var surface := get_node_or_null(node_name) as MeshInstance3D
 		if surface != null:
 			surface.material_override = _asphalt_material(Color("66645c"), 0.95)
+
+
+func _cbd_road_dressing_cache_path() -> String:
+	return "user://cache/cbd_road_dressing_v%d_%d.res" % [CBD_ROAD_DRESSING_CACHE_VERSION, _world_text_hash]
+
+
+func _load_cbd_road_dressing_cache() -> CbdRoadDressingCacheData:
+	var path := _cbd_road_dressing_cache_path()
+	if not ResourceLoader.exists(path):
+		return null
+	var cache := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if cache is CbdRoadDressingCacheData:
+		return cache
+	return null
+
+
+func _save_cbd_road_dressing_cache(cache: CbdRoadDressingCacheData) -> void:
+	DirAccess.make_dir_recursive_absolute("user://cache")
+	var err := ResourceSaver.save(cache, _cbd_road_dressing_cache_path())
+	if err != OK:
+		push_warning("CbdWorld: failed to write road dressing cache (error %d)" % err)
 
 
 func _clears_town_hall_forecourt(row: Dictionary) -> bool:

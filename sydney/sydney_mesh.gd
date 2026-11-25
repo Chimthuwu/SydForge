@@ -665,9 +665,29 @@ static func crossings(rows: Array, y: float, color: Color) -> ArrayMesh:
 
 
 # ---------------------------------------------------------------- buildings --
+## Oriented triangle vertices for a building wall/roof face, or empty if
+## degenerate. Pure geometry — no SurfaceTool calls — so the caller can batch
+## thousands of these into plain arrays instead of paying SurfaceTool's
+## per-attribute call overhead three times per vertex (see buildings() below,
+## where ~19k buildings/4.5M vertices made that overhead the #1 startup cost).
+static func _oriented_triangle(a: Vector3, b: Vector3, c: Vector3, normal: Vector3) -> PackedVector3Array:
+	var cross := (b - a).cross(c - a)
+	if cross.length() < EPSILON:
+		return PackedVector3Array()
+	if cross.dot(normal) < 0.0:
+		var swap := b
+		b = c
+		c = swap
+	return PackedVector3Array([a, b, c])
+
+
 static func buildings(rows: Array) -> Dictionary:
-	var surface := SurfaceTool.new()
-	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Plain Arrays, bulk-converted to Packed* once at the end: appending to a
+	# typed Array per vertex is far cheaper here than SurfaceTool.add_vertex()/
+	# set_normal()/set_color() (three engine calls per vertex, every vertex).
+	var verts: Array = []
+	var normals: Array = []
+	var colors: Array = []
 	var faces := PackedVector3Array()
 	var built := 0
 	var skipped := 0
@@ -721,14 +741,20 @@ static func buildings(rows: Array) -> Dictionary:
 			var p1 := Vector3(b.x, 0.0, b.y)
 			var p2 := Vector3(b.x, height, b.y)
 			var p3 := Vector3(a.x, height, a.y)
-			var first := _add_triangle(surface, p0, p1, p2, normal, base)
+			var first := _oriented_triangle(p0, p1, p2, normal)
 			if first.size() == 3:
+				verts.append_array(first)
+				normals.append(normal); normals.append(normal); normals.append(normal)
+				colors.append(base); colors.append(base); colors.append(base)
 				faces.append_array(first)
 				wall_triangles += 1
 			else:
 				degenerate_triangles += 1
-			var second := _add_triangle(surface, p0, p2, p3, normal, base)
+			var second := _oriented_triangle(p0, p2, p3, normal)
 			if second.size() == 3:
+				verts.append_array(second)
+				normals.append(normal); normals.append(normal); normals.append(normal)
+				colors.append(base); colors.append(base); colors.append(base)
 				faces.append_array(second)
 				wall_triangles += 1
 			else:
@@ -738,23 +764,30 @@ static func buildings(rows: Array) -> Dictionary:
 			var a: Vector2 = triangle[0]
 			var b: Vector2 = triangle[1]
 			var c: Vector2 = triangle[2]
-			var added := _add_triangle(
-				surface,
+			var added := _oriented_triangle(
 				Vector3(a.x, height, a.y),
 				Vector3(b.x, height, b.y),
 				Vector3(c.x, height, c.y),
 				Vector3.UP,
-				roof,
 			)
 			if added.size() == 3:
+				verts.append_array(added)
+				normals.append(Vector3.UP); normals.append(Vector3.UP); normals.append(Vector3.UP)
+				colors.append(roof); colors.append(roof); colors.append(roof)
 				faces.append_array(added)
 		if wall_triangles == 0:
 			skipped += 1
 			continue
 		built += 1
 
-	var mesh := surface.commit()
-	if mesh != null and mesh.get_surface_count() > 0:
+	var mesh := ArrayMesh.new()
+	if not verts.is_empty():
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array(verts)
+		arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array(normals)
+		arrays[Mesh.ARRAY_COLOR] = PackedColorArray(colors)
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(0, vertex_mat())
 	return {
 		"mesh": mesh,

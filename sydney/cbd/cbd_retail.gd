@@ -170,6 +170,17 @@ func _nearest_facade(world_data: Dictionary, point: Vector2) -> Dictionary:
 		var ring: Array = row.get("ring", [])
 		if ring.size() < 3:
 			continue
+		# Cheap reject before the full per-edge scan: every point on a CBD
+		# block footprint is within ~300 m of its own first vertex, so if even
+		# that vertex can't beat the current best, no edge of this building
+		# can either. This alone was the #1 startup-time cost (see
+		# docs/PERFORMANCE_AUDIT_2026-11-24.md §7) — 16 retail sites each
+		# scanning every building's every edge with no spatial filter.
+		var first_raw: Array = ring[0]
+		if first_raw.size() >= 2:
+			var first_point := Vector2(float(first_raw[0]), float(first_raw[1]))
+			if first_point.distance_to(point) - 300.0 >= best_distance:
+				continue
 		var orientation := _ring_orientation(ring)
 		for index in ring.size():
 			var a_raw: Array = ring[index]

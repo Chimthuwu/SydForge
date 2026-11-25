@@ -29,8 +29,15 @@ var bounds: Dictionary = {}
 var loaded_path := ""
 var load_error := ""
 var landmark_podium := PackedVector2Array()
+var _world_text_hash: int = 0
 
 static var _portal_meshes: Dictionary = {}
+## Bump when _build_buildings()'s geometry/collision output changes shape,
+## so stale caches from an older build never get loaded silently.
+const BUILDING_CACHE_VERSION := 1
+## Bump when _build_roads()'s cached mesh output changes shape.
+const ROAD_CACHE_VERSION := 1
+const TUNNEL_Y := -9.0
 
 
 func load_world(path: String = DEFAULT_PATH) -> bool:
@@ -43,6 +50,7 @@ func load_world(path: String = DEFAULT_PATH) -> bool:
 		return _fail("cannot open " + path)
 	var text := file.get_as_text()
 	file.close()
+	_world_text_hash = text.hash()
 	var json := JSON.new()
 	var error := json.parse(text)
 	if error != OK:
@@ -290,24 +298,69 @@ func _build_parks() -> void:
 	_add_mesh("Parks", mesh)
 
 
+func _roads_cache_path() -> String:
+	return "user://cache/roads_v%d_%d.res" % [ROAD_CACHE_VERSION, _world_text_hash]
+
+
+func _load_roads_cache() -> RoadMeshCacheData:
+	var path := _roads_cache_path()
+	if not ResourceLoader.exists(path):
+		return null
+	var cache := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if cache is RoadMeshCacheData:
+		return cache
+	return null
+
+
+func _save_roads_cache(cache: RoadMeshCacheData) -> void:
+	DirAccess.make_dir_recursive_absolute("user://cache")
+	var err := ResourceSaver.save(cache, _roads_cache_path())
+	if err != OK:
+		push_warning("SydneyWorld: failed to write roads cache (error %d)" % err)
+
+
+## The surface ribbon and both tunnel meshes are deterministic for a given
+## export file and take ~5 s of SurfaceTool work across the whole road
+## network (docs/PERFORMANCE_AUDIT_2026-11-24.md §10), so they're cached the
+## same way _build_buildings() caches its mesh. Tunnel portal frames are cheap
+## node-tree construction, built fresh every run below.
 func _build_roads() -> void:
 	# Surface roads are drawn as ribbons; tunnel-tagged roads are rendered as
 	# authored 3D tunnel structures below ground instead of being omitted.
 	# Roads that run under the Opera House podium are split there rather than
 	# drawn through the landmark shell.
 	var roads: Array = OperaHouseLandmark.filtered_roads(data.get("roads", []), landmark_podium)
-	var mesh := SydneyMesh.road_mesh(roads, data.get("junctions", []), 0.06, Color("30353a"))
-	_add_mesh("Roads", mesh)
-	_build_road_tunnels(roads)
+
+	var cache := _load_roads_cache()
+	if cache == null:
+		var mesh := SydneyMesh.road_mesh(roads, data.get("junctions", []), 0.06, Color("30353a"))
+		var surface_mesh := SydneyMesh.tunnel_road_surface_mesh(roads, TUNNEL_Y, Color("2a2e33"))
+		var shell_mesh := SydneyMesh.tunnel_road_shell_mesh(roads, TUNNEL_Y, Color("4a4d52"))
+		cache = RoadMeshCacheData.new()
+		cache.roads_mesh = mesh
+		var roads_counted := _count_mesh(mesh) if mesh != null else {"vertices": 0, "triangles": 0}
+		cache.roads_vertices = int(roads_counted["vertices"])
+		cache.roads_triangles = int(roads_counted["triangles"])
+		cache.tunnel_surface_mesh = surface_mesh
+		var surface_counted := _count_mesh(surface_mesh) if surface_mesh != null else {"vertices": 0, "triangles": 0}
+		cache.tunnel_surface_vertices = int(surface_counted["vertices"])
+		cache.tunnel_surface_triangles = int(surface_counted["triangles"])
+		cache.tunnel_shell_mesh = shell_mesh
+		var shell_counted := _count_mesh(shell_mesh) if shell_mesh != null else {"vertices": 0, "triangles": 0}
+		cache.tunnel_shell_vertices = int(shell_counted["vertices"])
+		cache.tunnel_shell_triangles = int(shell_counted["triangles"])
+		_save_roads_cache(cache)
+
+	if cache.roads_mesh != null:
+		_add_cached_mesh("Roads", cache.roads_mesh, cache.roads_vertices, cache.roads_triangles)
+	if cache.tunnel_surface_mesh != null:
+		_add_cached_mesh("RoadTunnels", cache.tunnel_surface_mesh, cache.tunnel_surface_vertices, cache.tunnel_surface_triangles)
+	if cache.tunnel_shell_mesh != null:
+		_add_cached_mesh("RoadTunnelShells", cache.tunnel_shell_mesh, cache.tunnel_shell_vertices, cache.tunnel_shell_triangles)
+	_build_road_tunnel_portals(roads)
 
 
-func _build_road_tunnels(roads: Array) -> void:
-	const TUNNEL_Y := -9.0
-	var surface_mesh := SydneyMesh.tunnel_road_surface_mesh(roads, TUNNEL_Y, Color("2a2e33"))
-	_add_mesh("RoadTunnels", surface_mesh)
-	var shell_mesh := SydneyMesh.tunnel_road_shell_mesh(roads, TUNNEL_Y, Color("4a4d52"))
-	_add_mesh("RoadTunnelShells", shell_mesh)
-
+func _build_road_tunnel_portals(roads: Array) -> void:
 	# Simple portal frames at true tunnel mouths (endpoints that are not shared
 	# with another tunnel segment) for visible transitions.
 	var tunnel_roads: Array = []
@@ -454,6 +507,31 @@ func _build_landmarks() -> void:
 	geometry_counts["OperaHouse"] = landmark.stats
 
 
+func _buildings_cache_path() -> String:
+	return "user://cache/buildings_v%d_%d.res" % [BUILDING_CACHE_VERSION, _world_text_hash]
+
+
+func _load_buildings_cache() -> BuildingMeshCacheData:
+	var path := _buildings_cache_path()
+	if not ResourceLoader.exists(path):
+		return null
+	var cache := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if cache is BuildingMeshCacheData:
+		return cache
+	return null
+
+
+func _save_buildings_cache(cache: BuildingMeshCacheData) -> void:
+	DirAccess.make_dir_recursive_absolute("user://cache")
+	var err := ResourceSaver.save(cache, _buildings_cache_path())
+	if err != OK:
+		push_warning("SydneyWorld: failed to write buildings cache (error %d)" % err)
+
+
+## Merging ~19k building footprints into one mesh + collision shape is
+## ~16 s of pure GDScript geometry math and fully deterministic for a given
+## export file, so the result is cached to disk on first build and reused on
+## every later launch of the same city data (see docs/PERFORMANCE_AUDIT_2026-11-24.md §8/§9).
 func _build_buildings() -> void:
 	var assemblable: Array = OperaHouseLandmark.filtered_buildings(data.get("buildings", []), landmark_podium)
 	var assembler_script = preload("res://sydney/architecture/assembler.gd")
@@ -462,35 +540,65 @@ func _build_buildings() -> void:
 	var architecture: Node3D = assembler.assemble(selected)
 	add_child(architecture)
 	geometry_counts["Architecture"] = {"converted": selected.size(), "fallback": assemblable.size() - selected.size(), "buildings": architecture.get_meta("buildings")}
-	var built := SydneyMesh.buildings(assemblable)
-	var mesh = built.get("mesh")
-	if mesh != null:
-		_add_mesh("Buildings", SydneyMesh.engine_building_mesh(mesh))
-	var faces: PackedVector3Array = built.get("faces", PackedVector3Array())
+
+	var cache := _load_buildings_cache()
+	if cache == null:
+		var built := SydneyMesh.buildings(assemblable)
+		var raw_mesh = built.get("mesh")
+		var engine_mesh: Mesh = SydneyMesh.engine_building_mesh(raw_mesh) if raw_mesh != null else null
+		var faces: PackedVector3Array = built.get("faces", PackedVector3Array())
+		var shape: Shape3D = null
+		if faces.size() >= 3:
+			var concave := ConcavePolygonShape3D.new()
+			concave.set_faces(SydneyMesh.engine_building_faces(faces))
+			shape = concave
+		var vertices := 0
+		if engine_mesh != null:
+			for surface_index in engine_mesh.get_surface_count():
+				vertices += engine_mesh.surface_get_array_len(surface_index)
+		cache = BuildingMeshCacheData.new()
+		cache.mesh = engine_mesh
+		cache.shape = shape
+		cache.collision_triangles = faces.size() / 3
+		cache.built = int(built.get("built", 0))
+		cache.skipped = int(built.get("skipped", 0))
+		cache.degenerate_triangles = int(built.get("degenerateTriangles", 0))
+		cache.vertices = vertices
+		cache.triangles = faces.size() / 3
+		_save_buildings_cache(cache)
+
+	if cache.mesh != null:
+		var instance := MeshInstance3D.new()
+		instance.name = "Buildings"
+		instance.mesh = cache.mesh
+		add_child(instance)
 	geometry_counts["Buildings"] = {
-		"vertices": geometry_counts.get("Buildings", {}).get("vertices", 0),
-		"triangles": geometry_counts.get("Buildings", {}).get("triangles", 0),
-		"collisionTriangles": faces.size() / 3,
-		"built": int(built.get("built", 0)),
-		"skipped": int(built.get("skipped", 0)),
-		"degenerateTriangles": int(built.get("degenerateTriangles", 0)),
+		"vertices": cache.vertices,
+		"triangles": cache.triangles,
+		"collisionTriangles": cache.collision_triangles,
+		"built": cache.built,
+		"skipped": cache.skipped,
+		"degenerateTriangles": cache.degenerate_triangles,
 	}
-	if int(built.get("skipped", 0)) > 0:
-		push_warning("SydneyWorld: skipped %d malformed/empty building footprints" % int(built.get("skipped", 0)))
-	if faces.size() >= 3:
+	if cache.skipped > 0:
+		push_warning("SydneyWorld: skipped %d malformed/empty building footprints" % cache.skipped)
+	if cache.shape != null:
 		var body := StaticBody3D.new()
 		body.name = "BuildingCollision"
 		add_child(body)
 		var collider := CollisionShape3D.new()
-		var shape := ConcavePolygonShape3D.new()
-		shape.set_faces(SydneyMesh.engine_building_faces(faces))
-		collider.shape = shape
+		collider.shape = cache.shape
 		body.add_child(collider)
 
 
 func _add_mesh(node_name: String, mesh: ArrayMesh) -> void:
 	if mesh == null:
 		return
+	var counted := _count_mesh(mesh)
+	_add_cached_mesh(node_name, mesh, int(counted["vertices"]), int(counted["triangles"]))
+
+
+func _count_mesh(mesh: Mesh) -> Dictionary:
 	var vertices := 0
 	var triangles := 0
 	for surface_index in mesh.get_surface_count():
@@ -501,6 +609,13 @@ func _add_mesh(node_name: String, mesh: ArrayMesh) -> void:
 			triangles += indices.size() / 3
 		else:
 			triangles += mesh.surface_get_array_len(surface_index) / 3
+	return {"vertices": vertices, "triangles": triangles}
+
+
+## Like _add_mesh(), but takes pre-known vertex/triangle counts instead of
+## recomputing them by fetching every surface's full array — the counting
+## path a cache hit should skip along with the mesh generation itself.
+func _add_cached_mesh(node_name: String, mesh: Mesh, vertices: int, triangles: int) -> void:
 	geometry_counts[node_name] = {"vertices": vertices, "triangles": triangles}
 	var instance := MeshInstance3D.new()
 	instance.name = node_name
