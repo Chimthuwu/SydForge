@@ -92,6 +92,7 @@
 - [ ] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout.
 - [x] **Test plan documented:** Created `docs/RAIL_CROSSING_DRIVE_TESTPLAN.md` for 14 rail cutting crossings + Central/Redfern approach, 8 vehicle classes.
 - [ ] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach.
+  - Scripted physics drive-over added: `tests/cutting_driveover_test.gd` — an AI-driven ArcadeCar crosses all 14 decks along the real carriageway heading, 14/14 hold street level (min_y ≈ -0.25). Live drive/camera feel still with the human.
 
 ## Repo state / notes
 
