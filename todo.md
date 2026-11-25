@@ -51,10 +51,13 @@
 - [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking). Requires live windowed session; headless coverage documented.
 - [x] **Test plan documented:** Created `docs/WHEELIE_RIDER_POSE_TESTPLAN.md` for wheelie pose verification (straight, turn, brake, NOS, crash).
 - [ ] Confirm wheelie rider pose stays correct while turning/accelerating/braking (currently scripted and visually captured only).
+  - Headless pose coverage added: `tests/wheelie_pose_test.gd` 16/16 — pose tracking, sustain through steering, gradual brake release, NOS coexistence, wreck lockout. Visual framing/lean aesthetics still need a live session per `docs/WHEELIE_RIDER_POSE_TESTPLAN.md`.
 - [x] **Test plan documented:** Created `docs/GRIND_CITY_LEDGES_TESTPLAN.md` with 7 locations × 10 test variants, sign-off matrix.
 - [ ] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked.
+  - Raycast entry now machine-verified against the built world: `tests/grind_real_geometry_test.gd` 5/5 — probes all 7 documented locations, ollies onto the probed surface, entry+sustain+jump-exit 7/7 (The Rocks y=15.1, Barangaroo y=26.0, George St y=6.4 included). Rail alignment/sparks/camera still need live sign-off.
 - [x] **Test plan documented:** Created `docs/POLICE_WANTED_ESCALATION_TESTPLAN.md` with 6 escalation scenarios, AI behavior matrix, tier definitions.
 - [ ] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react).
+  - Headless chain now covered: `tests/wanted_system_test.gd` 17/17 — threshold escalation, officer_killed heat jump, live set_alert propagation to nearby units (was dead code: PoliceCar had no set_alert), spawn range/pursuit, heat decay, clear. Live AI-behaviour matrix (cover, flanking, roadblocks) still needs a human session.
 
 ## Visual direction / world quality
 
