@@ -90,6 +90,7 @@
 - [ ] **Priority 2 landmark/station depth.** Central still has the authored sandstone frontage, clock tower and four platform canopies, but not the full concourse/forecourt/multi-platform complex. Circular Quay, Darling Harbour, Town Hall, QVB, St Mary's and Hyde Park remain at their previous authored level.
 - [x] **Test plan documented:** Created `docs/VISUAL_CAPTURE_TESTPLAN.md` for 131 storefronts, night headlights (5 vehicle classes), pause/controls screens.
 - [ ] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout.
+  - Capture material produced (2026-11-26): `tests/capture_l89_visuals.gd` → 27 PNGs in `tests/captures/l89/` (5 brands day+night, 4 vehicles front+beam, pause menu); vision pass confirms signs legible, pause clean — see `docs/L89_VISUAL_CAPTURES_2026-11-26.md`. FOUND: headlight spots never light the road (see Inbox). Human sign-off still open.
 - [x] **Test plan documented:** Created `docs/RAIL_CROSSING_DRIVE_TESTPLAN.md` for 14 rail cutting crossings + Central/Redfern approach, 8 vehicle classes.
 - [ ] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach.
   - Scripted physics drive-over added: `tests/cutting_driveover_test.gd` — an AI-driven ArcadeCar crosses all 14 decks along the real carriageway heading, 14/14 hold street level (min_y ≈ -0.25). Live drive/camera feel still with the human.
@@ -101,4 +102,19 @@
 - Street rendering fix is in `shaders/asphalt.gdshader`; tree clearance in `sydney/cbd/cbd_greenery.gd`; Parramatta extension is data-only in `sydney/world/stage_b/world.json` (provenance noted in its `limitations`).
 - Handoff notes: `docs/GAMEPLAY_OVERHAUL_HANDOFF.md`, `docs/CYBERPUNK_ASSET_GAP.md`.
 - Inner West exists as a separate playtest district (`sydney/sydney_inner_west_test.tscn`, King Street, Newtown), but its world build walks ~23.6k footpaths and ~27.5k buildings synchronously and does not complete in a practical time in this environment, so it is not offered in the menu. Its rail ribbon call had a nested-array bug that aborted rail construction; that call is fixed, but the district still needs a build-time budget pass before it can be a spawn.
-- Do not commit unless asked.
+- Commit+push after every finished task / WIP checkpoint is the standing rule (owner, 2026-11-23); the older "do not commit unless asked" note from earlier passes is superseded.
+
+## Inbox (agent-proposed)
+
+- [ ] **Headlight spots never illuminate the road surface at night** [P1] [bugs] [size:M]
+  Why: capture evidence in `docs/L89_VISUAL_CAPTURES_2026-11-26.md` — SpotLight3Ds toggle visible (logic tests 32/0) but no light pool reaches the road from any angle; suspected max-lights-per-mesh limit in gl_compatibility because roads/footpaths are single whole-city merged meshes whose AABB sees all 126 night lights.
+  Done when: a rear-beam capture (`tests/capture_l89_visuals.gd`) shows a light pool on the asphalt ahead of a parked car at 22:00.
+  Hints: tile the merged road/footpath meshes so lights cull per tile — same refactor as the perf audit's P2 draw-call item; alternatively test whether `rendering/limits/opengl/max_lights_per_object` trade-offs help first.
+- [ ] **Night storefront signs have no glow or light spill** [P3] [ui/cosmetic] [size:S]
+  Why: vision pass on `storefront_mcdonalds_night_posz.png` — lettering is high-contrast albedo but casts nothing, so signs read flat at night.
+  Done when: a night capture shows emissive glow (or a small light on the pavement) for at least the major chains.
+  Hints: raise the `_material` emission energy on `BrandSign` at night via the existing emissive path in `cbd_businesses.gd`.
+- [ ] **Storefronts read undersized against CBD towers** [P3] [ui/cosmetic] [size:M]
+  Why: the McDonald's capture shows a correctly seated but comically small single-storey shop against a 30-floor facade; hurts street believability.
+  Done when: owner picks target scale for chain storefronts (2-storey podium or wider frontage) and a before/after capture matches it.
+  Hints: `_desired_width()`/`_build_storefront()` in `sydney/cbd/cbd_businesses.gd`; needs an owner scale decision before work.
