@@ -32,9 +32,10 @@ func build() -> void:
 	_darling_quarter(Vector2(-601.0, 22.2))
 	_chinatown(Vector2(-425.8, 686.8))
 	_surry_hills(Vector2(273.8, 1713.7))
+	_kings_cross(Vector2(1499.0, 44.5))
 	call_deferred("_wire_clock")
 	_apply_night_factor(_night_factor)
-	stats = {"installations": 7, "materials": _materials.size()}
+	stats = {"installations": 8, "materials": _materials.size()}
 
 
 func _neon(color: Color, accent: Color, seed: int) -> ShaderMaterial:
@@ -175,6 +176,19 @@ func _surry_hills(at: Vector2) -> void:
 	_quad(s, Vector3(2.8, 3.0, 0.0), Vector2(2.0, 1.4), -PI * 0.5, _neon(AMBER, CYAN, 28))
 	for i in 3:
 		_box(s, Vector3(0.0, 3.2 + float(i) * 0.16, -0.2), Vector3(7.0, 0.04, 0.04), Color("2a2420"))
+
+
+func _kings_cross(at: Vector2) -> void:
+	# The Cross's identity piece: a huge double-sided billboard on a pylon
+	# above the intersection, in the classic red/amber/yellow stack.
+	var k := _anchor("KingsCrossBillboard", at)
+	_box(k, Vector3(0.0, 9.0, 0.0), Vector3(1.0, 10.0, 1.0), Color("1a1618"))
+	_box(k, Vector3(0.0, 14.2, 0.0), Vector3(11.0, 0.5, 0.8), Color("1a1618"))
+	_quad(k, Vector3(0.0, 11.6, -0.45), Vector2(10.5, 5.0), 0.0, _neon(RED, AMBER, 31))
+	_quad(k, Vector3(0.0, 11.6, 0.45), Vector2(10.5, 5.0), PI, _neon(MAGENTA, RED, 32))
+	# Wayfinding blades down the pylon, as for the nightlife strip.
+	for i in 3:
+		_quad(k, Vector3(0.55, 3.0 + float(i) * 1.4, 0.0), Vector2(0.8, 1.0), PI * 0.5, _neon(AMBER, RED, 33 + i))
 
 
 func _wire_clock() -> void:
