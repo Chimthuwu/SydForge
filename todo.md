@@ -67,6 +67,7 @@
 - [ ] Skyline still reads as thin cyan lines rather than a dense futuristic silhouette; the hero towers help but the base shell is low-detail. See `docs/CYBERPUNK_ASSET_GAP.md`.
   - First step shipped (2026-11-26): `sydney/cbd/cbd_roofline_dressing.gd` — city-wide rooftop clutter (antenna masts + red beacon tips, AC/plant blocks, water tanks) on the 4,017 buildings ≥18 m, batched into 4 MultiMeshes (130 ms build, no collision change). Harbour-view capture shows masts/beacons breaking up the silhouettes; placement verified clean. Follow-up taste call: prop size/density from high aerials (realistic scale reads sparse from 95 m up) — bump `_prop` scales/caps if the owner wants GTA-chunky rooftops.
 - [ ] Underdressed districts (Circular Quay, Barangaroo, The Rocks, Central, Darling Harbour, Pyrmont, Inner West) still need authored architectural identity rather than more neon signs.
+  - Anchor status (2026-11-26): Circular Quay, The Rocks, Barangaroo, Central, Darling Quarter and Surry Hills have anchors; added an 8th for Kings Cross (double-sided billboard pylon snapped to the Darlinghurst Rd junction — the district centroid sat inside a block). Pyrmont does not exist in the Stage B district data; Inner West is not a menu spawn — both need owner/data work first.
 - [ ] No authored futuristic vehicle fleet or rigged human models exist in `Z:\GITHUB\_ASSETS\ASSETS`; procedural fleet/humanoids remain. Documented in `docs/CYBERPUNK_ASSET_GAP.md`.
 
 ## Performance / stability
