@@ -48,16 +48,16 @@
 ## Gameplay — verify in the actual game
 
 - [x] **Test plan documented:** Created `docs/INTEGRATION_SCENARIOS_TESTPLAN.md` with 13-scenario checklist, headless coverage map, and sign-off table. Headless suites cover grind, explosion chain, NOS, bike wheelie, skate mount/dismount, vehicle enter/exit.
-- [ ] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking). Requires live windowed session; headless coverage documented.
+- [!] Manual in-game pass of the 13 shared integration scenarios in the vehicle/combat/skateboard brief (shoot car until explosion, kill police, explosion near police/peds, high-speed bike, B wheelie, sports cars in traffic, NOS in sports car, RIGHT ALT skateboard, ollie + tricks, grind rail/ledge, boost out of grind, enter vehicle while skateboarding, exit back to walking). Requires live windowed session; headless coverage documented.
   - Mechanically all 13 now have headless coverage: grind+entry (`grind_real_geometry_test`), wheelie+pose (`wheelie_pose_test`), police kill chain + vehicle-officer-kill (`wanted_system_test`), explosion/NOS/traffic variety (`gameplay_overhaul_test`), ollie/kickturn/enter-from-board/exit-to-walking/night-auto-headlights (`skate_transitions_test`). Found+fixed on the way: board ollies never left the ground (skateboard.gd velocity rebuild), police cars were indestructible and silent to the wanted system, officer-down alerts were dead code. Live feel/sign-off remains.
 - [x] **Test plan documented:** Created `docs/WHEELIE_RIDER_POSE_TESTPLAN.md` for wheelie pose verification (straight, turn, brake, NOS, crash).
-- [ ] Confirm wheelie rider pose stays correct while turning/accelerating/braking (currently scripted and visually captured only).
+- [!] Confirm wheelie rider pose stays correct while turning/accelerating/braking (requires interactive human play; headless coverage complete).
   - Headless pose coverage added: `tests/wheelie_pose_test.gd` 16/16 — pose tracking, sustain through steering, gradual brake release, NOS coexistence, wreck lockout. Visual framing/lean aesthetics still need a live session per `docs/WHEELIE_RIDER_POSE_TESTPLAN.md`.
 - [x] **Test plan documented:** Created `docs/GRIND_CITY_LEDGES_TESTPLAN.md` with 7 locations × 10 test variants, sign-off matrix.
-- [ ] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked.
+- [!] Confirm grinds work on real city ledges/rails from multiple viewpoints; rail alignment and exit are only script-checked. (grind mechanics machine-verified on real geometry; alignment/camera need human eyes)
   - Raycast entry now machine-verified against the built world: `tests/grind_real_geometry_test.gd` 5/5 — probes all 7 documented locations, ollies onto the probed surface, entry+sustain+jump-exit 7/7 (The Rocks y=15.1, Barangaroo y=26.0, George St y=6.4 included). Rail alignment/sparks/camera still need live sign-off.
 - [x] **Test plan documented:** Created `docs/POLICE_WANTED_ESCALATION_TESTPLAN.md` with 6 escalation scenarios, AI behavior matrix, tier definitions.
-- [ ] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react).
+- [!] Confirm police death/wanted escalation behaves correctly in a live session (officer_killed → wanted heat → nearby units react). (chain machine-verified headless incl. vehicle-kill scenario; AI feel needs human play)
   - Headless chain now covered: `tests/wanted_system_test.gd` 17/17 — threshold escalation, officer_killed heat jump, live set_alert propagation to nearby units (was dead code: PoliceCar had no set_alert), spawn range/pursuit, heat decay, clear. Live AI-behaviour matrix (cover, flanking, roadblocks) still needs a human session.
 
 ## Visual direction / world quality
@@ -68,7 +68,7 @@
   - First step shipped (2026-11-26): `sydney/cbd/cbd_roofline_dressing.gd` — city-wide rooftop clutter (antenna masts + red beacon tips, AC/plant blocks, water tanks) on the 4,017 buildings ≥18 m, batched into 4 MultiMeshes (130 ms build, no collision change). Harbour-view capture shows masts/beacons breaking up the silhouettes; placement verified clean. Follow-up taste call: prop size/density from high aerials (realistic scale reads sparse from 95 m up) — bump `_prop` scales/caps if the owner wants GTA-chunky rooftops.
 - [ ] Underdressed districts (Circular Quay, Barangaroo, The Rocks, Central, Darling Harbour, Pyrmont, Inner West) still need authored architectural identity rather than more neon signs.
   - Anchor status (2026-11-26): Circular Quay, The Rocks, Barangaroo, Central, Darling Quarter and Surry Hills have anchors; added an 8th for Kings Cross (double-sided billboard pylon snapped to the Darlinghurst Rd junction — the district centroid sat inside a block). Pyrmont does not exist in the Stage B district data; Inner West is not a menu spawn — both need owner/data work first.
-- [ ] No authored futuristic vehicle fleet or rigged human models exist in `Z:\GITHUB\_ASSETS\ASSETS`; procedural fleet/humanoids remain. Documented in `docs/CYBERPUNK_ASSET_GAP.md`.
+- [!] No authored futuristic vehicle fleet or rigged human models exist in `Z:\GITHUB\_ASSETS\ASSETS`; procedural fleet/humanoids remain. Documented in `docs/CYBERPUNK_ASSET_GAP.md`. (asset sourcing/licensing needs owner: spend + licence decision)
 
 ## Performance / stability
 
@@ -90,12 +90,13 @@
 ## Remaining from the fidelity brief
 
 - [ ] **Priority 1 terrain.** Stage B still has no elevation block. Real data is available (the Inner West district already uses public-domain AWS/Mapzen terrarium tiles in `sydney/world/inner_west/height.bin`), but a correct pass needs the ground, road/footpath ribbons, building foundations, parks, street furniture and collisions all re-based onto the grid while preserving the Harbour Bridge, Opera House and authored station elevations. Not attempted in this pass; no noise terrain was shipped.
+  - First step done (2026-11-26): `tests/terrain_stage_b_probe.gd` pins the data — existing 16 m DEM covers 86.2% of Stage B; ~1.3 km east strip (x 982..2265) missing; CBD samples are flat-zeroed in the tile, so a correct rebase needs a fresh DEM fetch + the offline export pipeline (both outside this repo). [!] next step needs new source data + owner datum policy.
 - [ ] **Priority 2 landmark/station depth.** Central still has the authored sandstone frontage, clock tower and four platform canopies, but not the full concourse/forecourt/multi-platform complex. Circular Quay, Darling Harbour, Town Hall, QVB, St Mary's and Hyde Park remain at their previous authored level.
 - [x] **Test plan documented:** Created `docs/VISUAL_CAPTURE_TESTPLAN.md` for 131 storefronts, night headlights (5 vehicle classes), pause/controls screens.
-- [ ] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout.
+- [!] Visual capture and human check of the 131 new storefronts, night headlights and the expanded pause/controls screens. Headless suites do not confirm legibility or layout. (captures produced + machine vision-checked; human sign-off remains)
   - Capture material produced (2026-11-26): `tests/capture_l89_visuals.gd` → 27 PNGs in `tests/captures/l89/` (5 brands day+night, 4 vehicles front+beam, pause menu); vision pass confirms signs legible, pause clean — see `docs/L89_VISUAL_CAPTURES_2026-11-26.md`. FOUND: headlight spots never light the road (see Inbox). Human sign-off still open.
 - [x] **Test plan documented:** Created `docs/RAIL_CROSSING_DRIVE_TESTPLAN.md` for 14 rail cutting crossings + Central/Redfern approach, 8 vehicle classes.
-- [ ] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach.
+- [!] Manual in-game drive over the repaired cutting crossings (14) and the Central/Redfern approach. (all 14 machine drive-verified; feel needs human play)
   - Scripted physics drive-over added: `tests/cutting_driveover_test.gd` — an AI-driven ArcadeCar crosses all 14 decks along the real carriageway heading, 14/14 hold street level (min_y ≈ -0.25). Live drive/camera feel still with the human.
 
 ## Repo state / notes
