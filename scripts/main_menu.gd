@@ -138,7 +138,7 @@ func _build() -> void:
 	footer.add_theme_constant_override("separation", 16)
 	column.add_child(footer)
 	var note := Label.new()
-	note.text = "WASD move · SPACE jump · E enter vehicles · RIGHT ALT skateboard"
+	note.text = "WASD move · SPACE jump · E enter vehicles · RIGHT ALT skateboard\nY street race (in a car) · F6 host / F7 join multiplayer · F10 scoreboard"
 	note.add_theme_font_size_override("font_size", 12)
 	note.add_theme_color_override("font_color", TEXT_DIM)
 	note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -152,6 +152,14 @@ func _build() -> void:
 	start.pressed.connect(_start)
 	footer.add_child(start)
 	start.grab_focus()
+
+	var quit := Button.new()
+	quit.text = "QUIT"
+	quit.custom_minimum_size = Vector2(120.0, 54.0)
+	quit.add_theme_font_size_override("font_size", 18)
+	_style_button(quit, false)
+	quit.pressed.connect(func() -> void: get_tree().quit())
+	footer.add_child(quit)
 
 
 func _add_header(parent: VBoxContainer, text: String) -> void:

@@ -189,6 +189,13 @@ func _build() -> void:
 	menu.pressed.connect(_on_return_to_menu)
 	column.add_child(menu)
 
+	var quit := Button.new()
+	quit.text = "QUIT GAME"
+	quit.custom_minimum_size = Vector2(0.0, 40.0)
+	quit.add_theme_font_size_override("font_size", 15)
+	quit.pressed.connect(func() -> void: get_tree().quit())
+	column.add_child(quit)
+
 	_status = Label.new()
 	_status.text = "ESC resume · F torch/headlights · click a binding to remap it"
 	_status.add_theme_font_size_override("font_size", 11)
