@@ -362,6 +362,8 @@ func _build_collision() -> int:
 		return 0
 	var body := StaticBody3D.new()
 	body.name = "HarbourWaterCollision"
+	# The shoreline is a hard barrier: the player may not wall-climb over it.
+	body.add_to_group("no_climb")
 	add_child(body)
 	var collider := CollisionShape3D.new()
 	var shape := ConcavePolygonShape3D.new()

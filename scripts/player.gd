@@ -44,6 +44,15 @@ var grapple_on: bool = false
 var grapple_point := Vector3.ZERO
 var grapple_cd: float = 0.0
 var grapple_rope: MeshInstance3D
+## Wall climb (ported from SKYJUMP3D): airborne and pressing into a wall latches on,
+## forward climbs, back slides, strafe moves along the wall, jump wall-jumps off,
+## sprint lets go. Grip stamina drains while climbing and refills on the ground.
+const CLIMB_SPEED := 4.5
+const CLIMB_STRAFE := 4.0
+var climbing: bool = false
+var climb_normal := Vector3.ZERO
+var climb_stamina: float = 1.0
+var climb_lock: float = 0.0
 var aiming: bool = false
 var current_weapon: int = WEAPON_PISTOL
 var flashlight: SpotLight3D
@@ -104,6 +113,7 @@ func _physics_process(dt: float) -> void:
 			ammo = 12
 	if vehicle != null:
 		_grapple_release(false)
+		_climb_release()
 		coyote_time = 0
 		jump_buffer = 0
 		global_position = vehicle.global_position
@@ -136,6 +146,10 @@ func _physics_process(dt: float) -> void:
 		glide_meter = minf(1.0, glide_meter + dt * 0.8)
 	coyote_time = 0.12 if is_on_floor() else maxf(0,coyote_time-dt)
 	jump_buffer = 0.12 if Input.is_action_just_pressed("jump") else maxf(0,jump_buffer-dt)
+	# Wall-jump takes priority over the normal jump while holding onto a wall.
+	if climbing and jump_buffer > 0.0:
+		_wall_jump()
+		jump_buffer = 0.0
 	# Space cuts the rope (with a small boost) and the jump still goes through.
 	if grapple_on and Input.is_action_just_pressed("jump"):
 		_grapple_release(true)
@@ -151,11 +165,12 @@ func _physics_process(dt: float) -> void:
 		jump_buffer = 0
 	elif not is_on_floor():
 		velocity.y -= 26*dt
+	_climb_tick(dt, direction, input)
 	_grapple_tick(dt)
 	# Glide: after the double jump, holding jump while falling caps the fall speed
 	# until the meter runs dry.
 	gliding = not is_on_floor() and used_double_jump and Input.is_action_pressed("jump") \
-		and velocity.y < 0.5 and glide_meter > 0.0
+		and velocity.y < 0.5 and glide_meter > 0.0 and not climbing
 	if gliding:
 		velocity.y = maxf(velocity.y, -GLIDE_FALL)
 		glide_meter = maxf(0.0, glide_meter - dt / GLIDE_TIME)
@@ -589,6 +604,82 @@ func award_bin_chicken_bonus() -> void:
 	world.message = "BIN CHICKEN BINNED! · +500 REP"
 	world.sound(520,0.16)
 
+func _climb_tick(dt: float, direction: Vector3, input: Vector2) -> void:
+	climb_lock = maxf(0.0, climb_lock - dt)
+	if is_on_floor():
+		climbing = false
+		climb_stamina = minf(1.0, climb_stamina + dt * 0.6)
+		return
+	if not climbing:
+		if climb_lock > 0.0 or climb_stamina <= 0.05 or not is_on_wall():
+			return
+		var raw := get_wall_normal()
+		if absf(raw.y) > 0.3:
+			return  # ceilings and slopes are not walls
+		if _touching_no_climb():
+			return  # hard barriers such as the harbour shoreline
+		var n := Vector3(raw.x, 0.0, raw.z).normalized()
+		# Latch only when the player is pushing into the wall.
+		if direction.dot(-n) > 0.35:
+			climbing = true
+			climb_normal = n
+			gliding = false
+			velocity = Vector3.ZERO
+		return
+	if Input.is_action_just_pressed("sprint") or climb_stamina <= 0.0 or not is_on_wall():
+		_climb_release()
+		return
+	var n := climb_normal
+	var t := Vector3.UP.cross(n).normalized()
+	var along := direction.dot(t)
+	var up := 1.0 if input.y < -0.1 else (-1.4 if input.y > 0.1 else 0.0)
+	velocity = Vector3(t.x * along * CLIMB_STRAFE - n.x * 2.0, up * CLIMB_SPEED, t.z * along * CLIMB_STRAFE - n.z * 2.0)
+	var drain := 0.2 if up > 0.0 else (0.05 if up < 0.0 else (0.1 if absf(along) > 0.1 else 0.06))
+	climb_stamina = maxf(0.0, climb_stamina - dt * drain)
+	if up > 0.0:
+		_climb_try_mantle(n)
+
+
+func _touching_no_climb() -> bool:
+	for i in get_slide_collision_count():
+		var hit := get_slide_collision(i)
+		if absf(hit.get_normal().y) > 0.3:
+			continue
+		var collider := hit.get_collider()
+		if collider is Node and (collider as Node).is_in_group("no_climb"):
+			return true
+	return false
+
+
+func _climb_try_mantle(n: Vector3) -> void:
+	# Probe a point just inside the wall; if a roof surface sits within reach below
+	# the probe top, step onto it.
+	# n points out of the wall toward the player, so -n points into the wall.
+	var probe := global_position - n * 0.6
+	var query := PhysicsRayQueryParameters3D.create(probe + Vector3.UP * 3.0, probe + Vector3.DOWN * 0.5, 1, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty() or hit.normal.y < 0.7:
+		return
+	var rise: float = hit.position.y - global_position.y
+	if rise < 0.6 or rise > 2.6:
+		return
+	global_position = Vector3(probe.x, hit.position.y + 0.02, probe.z)
+	velocity = Vector3.ZERO
+	_climb_release()
+
+
+func _climb_release() -> void:
+	climbing = false
+	climb_lock = 0.0
+
+
+func _wall_jump() -> void:
+	velocity = Vector3(climb_normal.x * 8.0, 9.4, climb_normal.z * 8.0)
+	climbing = false
+	climb_lock = 0.3
+	used_double_jump = false
+
+
 func grapple_fire() -> void:
 	if grapple_on or grapple_cd > 0.0 or vehicle != null or has_meta("skateboard") or world == null:
 		return
@@ -683,6 +774,8 @@ func respawn() -> void:
 	global_position = spawn
 	velocity = Vector3.ZERO
 	_grapple_release(false)
+	_climb_release()
+	climb_stamina = 1.0
 	coyote_time = 0
 	jump_buffer = 0
 	glide_meter = 1.0
