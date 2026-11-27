@@ -122,3 +122,7 @@
   Why: the McDonald's capture shows a correctly seated but comically small single-storey shop against a 30-floor facade; hurts street believability.
   Done when: owner picks target scale for chain storefronts (2-storey podium or wider frontage) and a before/after capture matches it.
   Hints: `_desired_width()`/`_build_storefront()` in `sydney/cbd/cbd_businesses.gd`; needs an owner scale decision before work.
+
+## Menu audit (2026-11-27)
+- [x] Audited menu system. Street racing accessible in-game (Y while in a car, `race_manager.gd`); multiplayer accessible (F6 host / F7 join on 127.0.0.1 / F10 scoreboard, ENet `network_manager.gd` + `deathmatch_manager.gd`). Exit was missing → added QUIT button to main menu and QUIT GAME to pause menu; footer hint now lists the race/multiplayer keys. Regression: `tests/lighting_pause_test.gd` 18/0. Committed 32506d7, pushed to origin/main.
+- [ ] Known limitation: F7 join hardcodes 127.0.0.1 — LAN/Tailscale play needs an address prompt.
