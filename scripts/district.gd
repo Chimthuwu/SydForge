@@ -183,7 +183,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func configure_input() -> void:
-	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G,"wheelie":KEY_B,"skate_boost":KEY_N,"skate_trick":KEY_T,"start_race":KEY_Y,"dm_host":KEY_F6,"dm_join":KEY_F7,"dm_scoreboard":KEY_F10}
+	var keys := {"forward":KEY_W,"back":KEY_S,"left":KEY_A,"right":KEY_D,"sprint":KEY_SHIFT,"jump":KEY_SPACE,"interact":KEY_E,"reload":KEY_R,"flashlight":KEY_F,"reset":KEY_F5,"weapon_pistol":KEY_1,"weapon_shotgun":KEY_2,"weapon_smg":KEY_3,"weapon_next":KEY_Q,"audio_up":KEY_BRACKETRIGHT,"audio_down":KEY_BRACKETLEFT,"horn":KEY_H,"sniff_petrol":KEY_G,"wheelie":KEY_B,"skate_boost":KEY_N,"skate_trick":KEY_T,"grapple":KEY_C,"start_race":KEY_Y,"dm_host":KEY_F6,"dm_join":KEY_F7,"dm_scoreboard":KEY_F10}
 	for action: String in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)

@@ -28,6 +28,22 @@ var stride: float = 0
 var coyote_time: float = 0
 var jump_buffer: float = 0
 var air_jumps_left: int = 1
+## Glide (ported from SKYJUMP3D): unlocked by the double jump, held jump slows the
+## fall, meter drains in the air and refills on landing.
+const GLIDE_FALL := 3.0
+const GLIDE_TIME := 8.0
+var glide_meter: float = 1.0
+var used_double_jump: bool = false
+var gliding: bool = false
+## Grappling hook (ported from SKYJUMP3D): fire at what the camera looks at, hold to
+## reel in, release to let go and keep your speed. Jump cuts the rope.
+const GRAPPLE_RANGE := 110.0
+const GRAPPLE_PULL := 85.0
+const GRAPPLE_SPEED_CAP := 46.0
+var grapple_on: bool = false
+var grapple_point := Vector3.ZERO
+var grapple_cd: float = 0.0
+var grapple_rope: MeshInstance3D
 var aiming: bool = false
 var current_weapon: int = WEAPON_PISTOL
 var flashlight: SpotLight3D
@@ -68,6 +84,7 @@ func _ready() -> void:
 
 func _physics_process(dt: float) -> void:
 	quad_jump_time = maxf(0.0, quad_jump_time - dt)
+	grapple_cd = maxf(0.0, grapple_cd - dt)
 	invulnerable = maxf(0,invulnerable-dt)
 	_update_trip(dt)
 	fire_time = maxf(0,fire_time-dt)
@@ -86,6 +103,7 @@ func _physics_process(dt: float) -> void:
 		if reload_time <= 0:
 			ammo = 12
 	if vehicle != null:
+		_grapple_release(false)
 		coyote_time = 0
 		jump_buffer = 0
 		global_position = vehicle.global_position
@@ -96,11 +114,14 @@ func _physics_process(dt: float) -> void:
 	if has_meta("skateboard"):
 		board = get_meta("skateboard") as Node3D
 	if board != null:
+		_grapple_release(false)
 		if is_instance_valid(board):
 			global_position = board.global_position
 		else:
 			remove_meta("skateboard")
 		return
+	if Input.is_action_just_pressed("grapple"):
+		grapple_fire()
 	var input := Input.get_vector("left","right","forward","back")
 	var direction := Vector3(input.x,0,input.y).rotated(Vector3.UP,world.rig.yaw)
 	aiming = Input.is_action_pressed("aim")
@@ -111,8 +132,13 @@ func _physics_process(dt: float) -> void:
 	velocity.z = move_toward(velocity.z,direction.z*speed,accel*dt)
 	if is_on_floor():
 		air_jumps_left = 3 if quad_jump_time > 0.0 else 1
+		used_double_jump = false
+		glide_meter = minf(1.0, glide_meter + dt * 0.8)
 	coyote_time = 0.12 if is_on_floor() else maxf(0,coyote_time-dt)
 	jump_buffer = 0.12 if Input.is_action_just_pressed("jump") else maxf(0,jump_buffer-dt)
+	# Space cuts the rope (with a small boost) and the jump still goes through.
+	if grapple_on and Input.is_action_just_pressed("jump"):
+		_grapple_release(true)
 	if jump_buffer > 0 and coyote_time > 0:
 		velocity.y = 9.4
 		jump_buffer = 0
@@ -121,9 +147,18 @@ func _physics_process(dt: float) -> void:
 		velocity.y = 8.8
 		if quad_jump_time <= 0.0:
 			air_jumps_left -= 1
+		used_double_jump = true
 		jump_buffer = 0
 	elif not is_on_floor():
 		velocity.y -= 26*dt
+	_grapple_tick(dt)
+	# Glide: after the double jump, holding jump while falling caps the fall speed
+	# until the meter runs dry.
+	gliding = not is_on_floor() and used_double_jump and Input.is_action_pressed("jump") \
+		and velocity.y < 0.5 and glide_meter > 0.0
+	if gliding:
+		velocity.y = maxf(velocity.y, -GLIDE_FALL)
+		glide_meter = maxf(0.0, glide_meter - dt / GLIDE_TIME)
 	var grounded := is_on_floor()
 	# Snapping is effectively off while rising so a jump is never pulled back to
 	# the floor, and long while walking so stairs are followed downhill.
@@ -554,6 +589,86 @@ func award_bin_chicken_bonus() -> void:
 	world.message = "BIN CHICKEN BINNED! · +500 REP"
 	world.sound(520,0.16)
 
+func grapple_fire() -> void:
+	if grapple_on or grapple_cd > 0.0 or vehicle != null or has_meta("skateboard") or world == null:
+		return
+	var camera: Camera3D = world.rig.camera
+	var origin := camera.global_position
+	var dir := -camera.global_basis.z
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + dir * GRAPPLE_RANGE, 1, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		grapple_cd = 0.35
+		world.message = "NOTHING TO HOOK"
+		return
+	grapple_point = hit.position
+	grapple_on = true
+
+
+func _grapple_release(boost: bool) -> void:
+	if not grapple_on:
+		return
+	grapple_on = false
+	grapple_cd = 0.25
+	if grapple_rope != null:
+		grapple_rope.visible = false
+	if boost and not is_on_floor():
+		velocity.y += 4.0
+		glide_meter = minf(1.0, glide_meter + 0.15)
+
+
+func _grapple_tick(dt: float) -> void:
+	if not grapple_on:
+		return
+	if not Input.is_action_pressed("grapple"):
+		_grapple_release(true)
+		return
+	var anchor := global_position + Vector3(0, 1.2, 0)
+	var to_point := grapple_point - anchor
+	var dist := to_point.length()
+	if dist < 2.6:
+		_grapple_release(true)
+		return
+	# Pull toward the anchor and cancel most of gravity while the rope is taut.
+	velocity += to_point / dist * GRAPPLE_PULL * dt
+	velocity.y += 26.0 * 0.85 * dt
+	if velocity.length() > GRAPPLE_SPEED_CAP:
+		velocity = velocity.normalized() * GRAPPLE_SPEED_CAP
+	_update_grapple_rope(anchor)
+
+
+func _update_grapple_rope(anchor: Vector3) -> void:
+	if grapple_rope == null:
+		grapple_rope = MeshInstance3D.new()
+		grapple_rope.name = "GrappleRope"
+		var cylinder := CylinderMesh.new()
+		cylinder.top_radius = 0.035
+		cylinder.bottom_radius = 0.035
+		cylinder.height = 1.0
+		grapple_rope.mesh = cylinder
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color("9ff4ff")
+		mat.emission_enabled = true
+		mat.emission = Color("9ff4ff")
+		grapple_rope.material_override = mat
+		get_parent().add_child(grapple_rope)
+	var from := anchor
+	var span := grapple_point - from
+	var length := span.length()
+	var d := span / maxf(length, 0.001)
+	var ref := Vector3.UP if absf(d.y) < 0.99 else Vector3.FORWARD
+	var x := ref.cross(d).normalized()
+	var z := x.cross(d)
+	grapple_rope.visible = true
+	grapple_rope.global_transform = Transform3D(Basis(x, d * length, z), (from + grapple_point) * 0.5)
+
+
+func _exit_tree() -> void:
+	if grapple_rope != null and is_instance_valid(grapple_rope):
+		grapple_rope.queue_free()
+
+
 func respawn() -> void:
 	if vehicle != null:
 		world.rig.arm.remove_excluded_object(vehicle.get_rid())
@@ -567,8 +682,12 @@ func respawn() -> void:
 	visible = true
 	global_position = spawn
 	velocity = Vector3.ZERO
+	_grapple_release(false)
 	coyote_time = 0
 	jump_buffer = 0
+	glide_meter = 1.0
+	used_double_jump = false
+	gliding = false
 	health = 100
 	ammo = 12
 	shotgun_ammo = 6

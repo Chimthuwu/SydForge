@@ -36,6 +36,7 @@ const CONTROL_ACTIONS := [
 	["reload", "RELOAD"],
 	["flashlight", "TORCH / HEADLIGHTS"],
 	["skateboard", "SKATEBOARD"],
+	["grapple", "GRAPPLE"],
 	["horn", "HORN"],
 	["wheelie", "WHEELIE"],
 	["skate_trick", "SKATE TRICK"],
