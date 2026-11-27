@@ -95,13 +95,13 @@ func _run() -> void:
 	_check("nos_overlay_exists", overlay != null, "present")
 	if overlay != null and bike != null:
 		bike.call("enter", player)
-		bike.set("boost_on", true)
+		Input.action_press("sprint")  # real boost: hold sprint on a vehicle with boost energy
 		bike.set("speed", 25.0)
 		await _frames(20)
 		var active: float = float(overlay.get("current"))
-		bike.set("boost_on", false)
+		Input.action_release("sprint")
 		bike.set("speed", 0.0)
-		await _frames(90)
+		await _frames(240)  # boost fades out over a few seconds
 		var idle: float = float(overlay.get("current"))
 		_check("nos_activation", active > 0.2, "intensity=%.2f" % active)
 		_check("nos_cleanup", idle < 0.05, "intensity=%.2f" % idle)

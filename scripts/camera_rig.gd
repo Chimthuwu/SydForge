@@ -389,5 +389,5 @@ func _process(dt: float) -> void:
 	var fov := 56.0 if aiming else 68.0
 	if driving:
 		var boost_factor := float(target.vehicle.get("boost_factor")) if target.vehicle.get("boost_factor") != null else 0.0
-		fov = 68+clampf(absf(vehicle_speed)/40,0,1)*10+boost_factor*8
+		fov = 68+boost_factor*8  # FOV widens for boost only, not raw speed
 	camera.fov = lerpf(camera.fov,fov,1-exp(-6*dt))

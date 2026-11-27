@@ -33,12 +33,10 @@ func setup(actor: Node3D) -> void:
 
 func _process(dt: float) -> void:
 	var boosting := false
-	var fast := false
 	if player != null and is_instance_valid(player):
 		var car = player.get("vehicle")
 		if car != null and is_instance_valid(car):
 			boosting = car.get("boost_on") == true
-			fast = absf(float(car.get("speed"))) > 18.0
 		var board = null
 		if player.has_meta("skateboard"):
 			board = player.get_meta("skateboard")
@@ -49,7 +47,7 @@ func _process(dt: float) -> void:
 			pulse = 1.0
 		target = 1.0
 	else:
-		target = 0.30 if fast else 0.0
+		target = 0.0  # distortion is for NOS/boost only, never raw speed
 	_was_boosting = boosting
 	current = lerpf(current, target, 1.0 - exp(-(6.0 if boosting else 3.0) * dt))
 	pulse = maxf(0.0, pulse - dt * 2.6)
