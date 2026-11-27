@@ -150,4 +150,5 @@
 
 ## Menu audit (2026-11-27)
 - [x] Audited menu system. Street racing accessible in-game (Y while in a car, `race_manager.gd`); multiplayer accessible (F6 host / F7 join on 127.0.0.1 / F10 scoreboard, ENet `network_manager.gd` + `deathmatch_manager.gd`). Exit was missing → added QUIT button to main menu and QUIT GAME to pause menu; footer hint now lists the race/multiplayer keys. Regression: `tests/lighting_pause_test.gd` 18/0. Committed 32506d7, pushed to origin/main.
-- [ ] Known limitation: F7 join hardcodes 127.0.0.1 — LAN/Tailscale play needs an address prompt.
+- [x] Follow-up (user feedback): race + multiplayer are now main-menu MODE options — STREET RACE (auto-seats the player in the nearest car and starts the AI rival race), HOST MULTIPLAYER (port 7777), JOIN MULTIPLAYER (localhost). Y / F6 / F7 remain as in-game shortcuts. New `tests/main_menu_test.gd` 7/0.
+- [ ] Known limitation: multiplayer join still targets 127.0.0.1 — LAN/Tailscale play needs an address prompt in the menu.

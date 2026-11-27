@@ -282,7 +282,7 @@ func _menu_allowed() -> bool:
 	return get_tree().current_scene == self
 
 
-func _on_menu_start(hours: float, spawn_id: String) -> void:
+func _on_menu_start(hours: float, spawn_id: String, mode: String = "free_roam") -> void:
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	var menu := get_node_or_null("MainMenu")
@@ -293,8 +293,63 @@ func _on_menu_start(hours: float, spawn_id: String) -> void:
 		time_mgr.set_time(hours)
 	if spawn_id == "bridge":
 		message = "SYDNEY HARBOUR BRIDGE · drive into the city"
+		_apply_menu_mode(mode)
 		return
 	_spawn_at_viewpoint(spawn_id)
+	_apply_menu_mode(mode)
+
+
+## Menu mode handling. STREET RACE seats the player in a car and starts the
+## rival race; the multiplayer modes open (or join) the ENet deathmatch
+## session, so neither feature needs a hidden hotkey.
+func _apply_menu_mode(mode: String) -> void:
+	match mode:
+		"street_race":
+			_start_menu_race()
+		"multiplayer_host":
+			if deathmatch_manager != null:
+				message = "DEATHMATCH · %s" % deathmatch_manager.host()
+		"multiplayer_join":
+			if deathmatch_manager != null:
+				message = "DEATHMATCH · %s" % deathmatch_manager.join("127.0.0.1")
+
+
+## The main menu's STREET RACE mode: seat the player in the closest enterable
+## car and hand the race straight to the RaceManager, no Y press required.
+func _start_menu_race() -> void:
+	if player == null or race_manager == null:
+		return
+	if player.vehicle == null:
+		var car := _nearest_enterable_car(48.0)
+		if car == null:
+			message = "STREET RACE · no car nearby — press E to take one, then Y"
+			return
+		if not car.call("enter", player):
+			message = "STREET RACE · couldn't get into a car — press E, then Y"
+			return
+	race_manager.try_start_race(player)
+
+
+func _nearest_enterable_car(radius: float) -> Node3D:
+	var best: Node3D = null
+	var best_distance := radius
+	if player == null:
+		return null
+	for car in vehicles:
+		if not car.has_method("enter") or car.health <= 0:
+			continue
+		var d := player.global_position.distance_to(car.global_position)
+		if d < best_distance:
+			best = car
+			best_distance = d
+	for traffic: Node3D in get_tree().get_nodes_in_group("traffic_vehicles"):
+		if not traffic.has_method("enter") or traffic.get("driver") != null:
+			continue
+		var d := player.global_position.distance_to(traffic.global_position)
+		if d < best_distance:
+			best = traffic
+			best_distance = d
+	return best
 
 
 func _spawn_at_viewpoint(spawn_id: String) -> void:

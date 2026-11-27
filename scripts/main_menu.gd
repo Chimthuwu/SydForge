@@ -10,7 +10,7 @@ extends CanvasLayer
 ## menu choice: its standalone playtest world builds tens of thousands of
 ## footpaths/buildings synchronously and is not practical to add here.
 ##
-signal start_requested(hours: float, spawn_id: String)
+signal start_requested(hours: float, spawn_id: String, mode: String)
 
 const TIME_OPTIONS := [
 	{"id": "morning", "label": "Morning", "clock": "07:30", "hours": 7.5},
@@ -36,8 +36,16 @@ const BORDER_IDLE := Color(0.22, 0.32, 0.34, 1.0)
 const TEXT := Color("e8ecea")
 const TEXT_DIM := Color("9fb0b3")
 
+const MODE_OPTIONS := [
+	{"id": "free_roam", "label": "FREE ROAM", "hint": "Explore the city at your own pace"},
+	{"id": "street_race", "label": "STREET RACE", "hint": "Drop into a car and race an AI rival straight away"},
+	{"id": "multiplayer_host", "label": "HOST MULTIPLAYER", "hint": "Open a deathmatch server on port 7777"},
+	{"id": "multiplayer_join", "label": "JOIN MULTIPLAYER", "hint": "Join a deathmatch (localhost)"},
+]
+
 var _hours := 12.5
 var _spawn_id := "bridge"
+var _mode := "free_roam"
 
 
 func _ready() -> void:
@@ -65,7 +73,7 @@ func _build() -> void:
 	root.add_child(centre)
 
 	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(880.0, 560.0)
+	panel.custom_minimum_size = Vector2(1140.0, 560.0)
 	var panel_style := StyleBoxFlat.new()
 	panel_style.bg_color = PANEL
 	panel_style.border_color = Color(0.13, 0.20, 0.22, 1.0)
@@ -134,6 +142,19 @@ func _build() -> void:
 		if str(option["id"]) == _spawn_id:
 			button.button_pressed = true
 
+	var mode_column := VBoxContainer.new()
+	mode_column.add_theme_constant_override("separation", 8)
+	mode_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	columns.add_child(mode_column)
+	_add_header(mode_column, "MODE")
+	var mode_group := ButtonGroup.new()
+	mode_group.allow_unpress = false
+	for option: Dictionary in MODE_OPTIONS:
+		var button := _add_choice(mode_column, option, mode_group)
+		button.pressed.connect(_select_mode.bind(str(option["id"])))
+		if str(option["id"]) == _mode:
+			button.button_pressed = true
+
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 16)
 	column.add_child(footer)
@@ -178,7 +199,7 @@ func _add_choice(parent: VBoxContainer, option: Dictionary, group: ButtonGroup) 
 	button.toggle_mode = true
 	button.button_group = group
 	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	button.custom_minimum_size = Vector2(340.0, 48.0)
+	button.custom_minimum_size = Vector2(300.0, 48.0)
 	button.add_theme_font_size_override("font_size", 15)
 	var text := str(option.get("label", ""))
 	if option.has("clock"):
@@ -231,5 +252,9 @@ func _select_spawn(spawn_id: String) -> void:
 	_spawn_id = spawn_id
 
 
+func _select_mode(mode_id: String) -> void:
+	_mode = mode_id
+
+
 func _start() -> void:
-	start_requested.emit(_hours, _spawn_id)
+	start_requested.emit(_hours, _spawn_id, _mode)
