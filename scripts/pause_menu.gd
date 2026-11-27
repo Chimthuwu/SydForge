@@ -32,7 +32,6 @@ const CONTROL_ACTIONS := [
 	["weapon_pistol", "WEAPON 1"],
 	["weapon_shotgun", "WEAPON 2"],
 	["weapon_smg", "WEAPON 3"],
-	["weapon_next", "NEXT WEAPON"],
 	["reload", "RELOAD"],
 	["flashlight", "TORCH / HEADLIGHTS"],
 	["skateboard", "SKATEBOARD"],

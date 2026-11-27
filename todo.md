@@ -108,6 +108,31 @@
 - Inner West exists as a separate playtest district (`sydney/sydney_inner_west_test.tscn`, King Street, Newtown), but its world build walks ~23.6k footpaths and ~27.5k buildings synchronously and does not complete in a practical time in this environment, so it is not offered in the menu. Its rail ribbon call had a nested-array bug that aborted rail construction; that call is fixed, but the district still needs a build-time budget pass before it can be a spawn.
 - Commit+push after every finished task / WIP checkpoint is the standing rule (owner, 2026-11-23); the older "do not commit unless asked" note from earlier passes is superseded.
 
+## Owner bug report (2026-11-27)
+
+- [ ] **Harbour Bridge trains still sink into the ground and clip through the road.** [P1] [bugs] [size:L]
+  Why: owner playtest; the rail on the bridge approach still goes into the road surface.
+  Done when: a real train tunnel runs underground from Wynyard to the very start of the Harbour Bridge, trains stay inside it, and no train is visible passing through the road.
+  Hints: the existing rail cutting/descent work (`cbd_rail_network.gd`, `StationInteriors.descent_cut_path()`) is the starting point; the bridge-approach section still needs its own tunnel bore.
+
+- [ ] **Milsons Point station is a floating mesh and cannot be reached.** [P1] [bugs] [size:M]
+  Why: owner playtest; station geometry sits in the air with no access.
+  Done when: the station sits on real ground or a platform with a walkable entrance, and the player can reach it on foot.
+
+- [ ] **Milsons Point needs building out, including Luna Park.** [P2] [content] [size:L]
+  Why: the area is currently empty; owner wants Luna Park present.
+  Done when: Milsons Point has authored streets and buildings and a recognisable Luna Park landmark at its real site.
+  Hints: Luna Park is a real landmark and needs a licence/attribution check before any exact-likeness modelling.
+
+- [ ] **Central Station is still broken.** [P1] [bugs] [size:M]
+  Why: owner playtest; reported as still wrong after earlier fixes. Exact failure not yet described.
+  Done when: owner confirms the specific issue is gone in a live playtest. Needs the owner's description of what is wrong (screenshot or location) before work starts.
+
+- [ ] **The city lacks depth and landmarks are not properly implemented.** [P2] [visual] [size:L]
+  Why: owner feedback; the city reads flat and the landmarks are not recognisable.
+  Done when: owner picks the priority landmarks and a before/after capture shows each one with a recognisable silhouette and placement.
+  Hints: builds on the existing anchor and landmark work in the "Visual direction / world quality" section.
+
 ## Inbox (agent-proposed)
 
 - [ ] **Headlight spots never illuminate the road surface at night** [P1] [bugs] [size:M]
