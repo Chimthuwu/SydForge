@@ -118,6 +118,10 @@ func _run() -> void:
 		func(node: Node) -> bool: return (node as Button).text == "RETURN TO MENU"
 	)
 	_check(menu_button.size() == 1, "pause overlay exposes return to menu")
+	var quit_button := menu.find_children("*", "Button", true, false).filter(
+		func(node: Node) -> bool: return (node as Button).text == "QUIT GAME"
+	)
+	_check(quit_button.size() == 1, "pause overlay exposes quit game")
 	var closed := [false]
 	menu.connect("closed", func() -> void: closed[0] = true)
 	# The tree is paused while this overlay is up, so it must own Esc itself.
