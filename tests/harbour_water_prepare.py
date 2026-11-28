@@ -29,7 +29,7 @@ from shapely.geometry import Polygon, MultiPolygon, box
 from shapely.ops import unary_union
 
 PIPE = r"Z:\GITHUB\_EXPERIMENTS\Sydney\sydney-osm-world\data\normalized\waterways.json"
-GAME = r"Z:\GITHUB\_GAMES\New folder"
+GAME = r"Z:\GITHUB\_GAMES\SydForge"
 BRIDGE_JSON = GAME + r"\sydney\landmarks\harbour_bridge.json"
 WORLD_JSON = GAME + r"\sydney\world\stage_a\world.json"
 OUT = GAME + r"\sydney\harbour\harbour_water.json"

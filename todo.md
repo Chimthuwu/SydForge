@@ -136,6 +136,7 @@
   Why: owner feedback; the city reads flat and the landmarks are not recognisable.
   Done when: owner picks the priority landmarks and a before/after capture shows each one with a recognisable silhouette and placement.
   Hints: builds on the existing anchor and landmark work in the "Visual direction / world quality" section.
+  - 2026-11-29 first step (DECISION `96ac0e4`, priority chosen by me — owner still picks the rest): authored Sydney Tower Eye — the CBD's tallest, most recognisable spire, previously absent — rising from the mapped Centrepoint block (`way/389002928`) to a ~283 m tip with pod, golden turret, cab, antenna mast and shaft collision. `tests/sydney_tower_test.gd` 8/0; captures `tests/landmark_sydney_tower_quay.png` / `_street.png` (vision pass: reads as the Sydney Tower silhouette, no floating/clipping). Remaining landmark depth (Central concourse, Darling Harbour, Town Hall forecourt...) is gated on owner visual/perf review (see the fidelity-brief landmark item).
 
 ### Reported during the 2026-11-27 session
 
@@ -151,6 +152,23 @@
   - 2026-11-29: root cause: the authored Blackwattle Bay overlay (`AUTHORED_BLACKWATTLE` in `tests/harbour_water_prepare.py`) swallowed mapped Ultimo land — 96 streets, 1,121 footpath points and 116 buildings inside the water rings. Reshaped the bay to the arm the Stage B CBD export maps (same projection): mouth on the Johnstons Bay chord, tip near Wentworth Park. Spliced `waterRings[0]` + `landRings[0]` (collar hole), updated the prepare script + coverage probes, added a roads/footpaths/buildings-stay-dry regression to `tests/harbour_water_test.gd` (92 checks, 0 failures; `harbour_boats_test` 1/0). DECISION checkpoint `ca6cef9`.
 
 ## Inbox (agent-proposed)
+
+- [ ] **main_game_test.gd is a stale baseline** [P2] [tests] [size:M]
+  Why: it still asserts the old canonical spawn/landmark set (handoff notes: 39 checks / 17 failures); after this run's Sydney Tower, landmark stats and the trimmed Central shell, more of its assertions are out of date.
+  Done when: `main_game_test.gd` passes 0 failures, or its stale assertions are updated to the current canonical world with a green run recorded here.
+  Hints: run `./Godot_v4.7.2-stable_win64_console.exe --headless --fixed-fps 60 --path . --script res://tests/main_game_test.gd`; update the landmark list, spawn expectations and `authoredLandmarkMasses` counts to today's world; keep every gameplay check.
+- [ ] **Repo root is littered with dev logs and glitch screenshots** [P3] [docs/hygiene] [size:S]
+  Why: probe2-10.log, runtime.log, validation.log, parse.log, PLAY/TEST cmd outputs and five "train tunnel glitch*.png" sit in the repo root (logs are gitignored but the glitch PNGs may be tracked); they read as junk to anyone browsing.
+  Done when: root-level logs/glitch screenshots are moved into `docs/images/` (glitch evidence referenced by docs) or deleted, and nothing referenced by code or docs breaks.
+  Hints: check `git ls-files "train tunnel*"` first; several docs and the handoff notes may reference the glitch captures.
+- [ ] **Sydney Tower pod proportions / night lighting** [P3] [ui/cosmetic] [size:S]
+  Why: the 2026-11-29 vision pass on `landmark_sydney_tower_quay.png` reads the silhouette correctly but notes the pod is squat relative to the real turret and the structure has no night presence (no beacon glow) — the rest of the city lights up at night.
+  Done when: the owner confirms the pod proportions (or they are nudged: wider lower turret, shorter upper ring) and a night capture shows the red beacon tip glowing.
+  Hints: `_build_sydney_tower` in `sydney/cbd/cbd_landmarks.gd`; reuse the neon/emissive path used by `cbd_neon_city.gd` for the beacon.
+- [ ] **Sydney Tower and skyline-heroes don't know about each other** [P3] [bugs] [size:S]
+  Why: `cbd_skyline_heroes.gd` builds its own "central" hero crown; the new 283 m tower now stands in the CBD-core district — check the hero crown does not overlap the tower shaft or double-up the same visual role.
+  Done when: an aerial capture from the CBD-core viewpoint shows the hero crown and the tower coexisting cleanly (no interpenetration), recorded here.
+  Hints: hero list in `cbd_skyline_heroes.gd` vs the tower at (166,-230); `tests/cbd_visual.gd` has capture plumbing.
 
 - [x] **Headlight spots never illuminate the road surface at night** [P1] [bugs] [size:M]
   - 2026-11-27: root cause: road ribbons are wound downward and drawn double-sided, so they were lit as if facing the ground (fixed in `shaders/asphalt.gdshader`); street meshes are also tiled (`mesh_tiler.gd`) and light limits raised. Streetlight pool confirmed on a city road, and a headlight pool ahead of a parked car on the bridge deck, in 22:00 captures.
