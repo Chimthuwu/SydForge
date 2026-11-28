@@ -56,6 +56,8 @@ func run() -> void:
 			var cross := (verts[c]-verts[a]).cross(verts[b]-verts[a])
 			if cross.length()<0.000001:
 				degenerates += 1
+			if winding and cross.dot(normals[a])<=0:
+				print("WINDING OFFENDER ",child.name," tri ",i," ids.size=",ids.size()," verts=",verts.size())
 			winding = winding and cross.dot(normals[a])>0
 			valid = valid and absf(normals[a].length()-1)<0.002
 	check(valid,"all vertices finite and normals unit length")
