@@ -59,8 +59,10 @@ func run() -> void:
 		"authored landmark detail is batched into a bounded number of meshes")
 	check(int(game.cbd_world.building_stats.get("operaHouseSiteOverlapsRemoved", 0)) == 6,
 		"remaining generated Opera House podium overlaps are removed")
-	check(int(game.cbd_world.building_stats.get("authoredLandmarkMasses", 0)) == 3,
-		"QVB, Town Hall, and St Mary’s use bespoke OSM-footprint masses")
+	check(int(game.cbd_world.building_stats.get("authoredLandmarkMasses", 0)) == 5,
+		"QVB, Town Hall, St Mary's, St Andrew's and the GPO use bespoke OSM-footprint masses")
+	check(int(game.cbd_world.building_stats.get("gpoFrontageInfillRemoved", 0)) == 3,
+		"generated slivers no longer stand on the GPO's Martin Place colonnade")
 	var opera_shells := game.cbd_world.get_node("OperaHouse/OperaShells") as MeshInstance3D
 	check(opera_shells.mesh.get_aabb().size.y > 60.0, "Opera House sails are enlarged for long-distance visibility")
 	check(player.is_on_floor(), "bridge spawn settles on a walkable surface")

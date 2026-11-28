@@ -32,7 +32,9 @@ const MilsonsPoint := preload("res://sydney/landmarks/milsons_point.gd")
 const CbdGreenery := preload("res://sydney/cbd/cbd_greenery.gd")
 ## Bump when CbdBuildings.build()'s result shape changes, so a stale cache
 ## from an older build is never loaded silently.
-const CBD_BUILDING_CACHE_VERSION := 1
+# v2: the GPO frontage filter (generated slivers on the Martin Place
+# pedestrian strip / colonnade setback) changed the filtered row set.
+const CBD_BUILDING_CACHE_VERSION := 2
 ## Bump when _build_roads()'s cached lane-markings/kerbs meshes change shape.
 const CBD_ROAD_DRESSING_CACHE_VERSION := 1
 ## Generated parcel fills that overlap the Opera House podium. Most are largely
@@ -53,11 +55,20 @@ const AUTHORED_LANDMARK_BUILDINGS := [
 	"way/40717424", # Queen Victoria Building
 	"way/104948253", # Sydney Town Hall
 	"way/16749128", # St Mary's Cathedral
+	"way/104948254", # St Andrew's Cathedral
+	"way/282238525", # Sydney General Post Office
 ]
 ## Generated infill on top of the Town Hall forecourt hid the authored east
 ## elevation and clock tower from George Street. The OSM Town Hall footprint is
 ## kept; only the generated blocks inside this protected frontage are removed.
 const TOWN_HALL_FORECOURT := Rect2(-127.0, -8.0, 60.0, 45.0)
+## The same protection for the GPO's Martin Place frontage: generated slivers
+## stood on the pedestrian strip and 2 m in front of the authored colonnade
+## (a 55.6 m blade wall hid the campanile; a 30.6 m parcel straddled the
+## colonnade line; an 87.7 m tower stood 5 m onto the walkway). Generated
+## rows with a ring vertex inside this zone are removed; real OSM buildings
+## (the GPO, the Prudential building) stay.
+const GPO_FRONTAGE := Rect2(-88.0, -615.5, 122.0, 19.5)
 ## Keep the Milsons Point-Wynyard rail corridor clear of generated/baked
 ## building footprints so the bridge descent and underground approach are not
 ## obstructed by buildings intersecting the trainline/tunnel envelope.
@@ -559,6 +570,7 @@ func _build_buildings() -> void:
 	var removed_site_overlaps := 0
 	var authored_landmark_masses := 0
 	var removed_town_hall_infill := 0
+	var removed_gpo_frontage := 0
 	var removed_rail_corridor := 0
 	for row in source_rows:
 		if String(row.get("id", "")) in AUTHORED_LANDMARK_BUILDINGS:
@@ -570,6 +582,9 @@ func _build_buildings() -> void:
 			continue
 		if _clears_town_hall_forecourt(row):
 			removed_town_hall_infill += 1
+			continue
+		if _clears_gpo_frontage(row):
+			removed_gpo_frontage += 1
 			continue
 		if _intersects_rail_corridor(row) or _intersects_surface_rail_corridor(row):
 			removed_rail_corridor += 1
@@ -607,6 +622,7 @@ func _build_buildings() -> void:
 	building_stats["operaHouseSiteOverlapsRemoved"] = removed_site_overlaps
 	building_stats["authoredLandmarkMasses"] = authored_landmark_masses
 	building_stats["townHallForecourtInfillRemoved"] = removed_town_hall_infill
+	building_stats["gpoFrontageInfillRemoved"] = removed_gpo_frontage
 	building_stats["railCorridorBuildingsRemoved"] = removed_rail_corridor
 	if cache.mesh != null:
 		var instance := MeshInstance3D.new()
@@ -1069,6 +1085,19 @@ func _clears_town_hall_forecourt(row: Dictionary) -> bool:
 		center += Vector2(float(point[0]), float(point[1]))
 	center /= float(ring.size())
 	return TOWN_HALL_FORECOURT.has_point(center)
+
+
+## Unlike the Town Hall forecourt's centroid test, this one checks every ring
+## vertex: the Martin Place slivers are thin C-shaped parcels whose centroid
+## averages into the street, outside any rectangle around the frontage.
+func _clears_gpo_frontage(row: Dictionary) -> bool:
+	if not str(row.get("id", "")).begins_with("gen/"):
+		return false
+	var ring: Array = row.get("ring", [])
+	for point: Array in ring:
+		if GPO_FRONTAGE.has_point(Vector2(float(point[0]), float(point[1]))):
+			return true
+	return false
 
 
 func _intersects_rail_corridor(row: Dictionary) -> bool:

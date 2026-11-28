@@ -32,6 +32,8 @@ func build(world_data: Dictionary) -> void:
 	_build_st_marys_cathedral(world_data)
 	_build_central_station(world_data)
 	_build_sydney_tower(world_data)
+	_build_st_andrews_cathedral(world_data)
+	_build_general_post_office(world_data)
 	var civic := CbdCivic.new()
 	civic.name = "SydneyCivicLandmarks"
 	civic.build(world_data)
@@ -307,6 +309,128 @@ func _build_st_marys_cathedral(world_data: Dictionary) -> void:
 			)
 			buttress.rotation.z = -side * 0.12
 			ArtUtil.box(group, Vector3(x + side * 2.2, 15.5, z), Vector3(0.18, 7.0, 1.3), WINDOW)
+
+
+## St Andrew's Cathedral — the twin-spire Gothic silhouette directly beside
+## the Town Hall menu spawn, previously just the generic striped shell. The
+## nave runs east-west with the twin spires and rose window on the George
+## Street (west) front, as built.
+func _build_st_andrews_cathedral(world_data: Dictionary) -> void:
+	var row := _building_row(world_data, "way/104948254")
+	if row.is_empty():
+		return
+	var group := _group("StAndrewsCathedral")
+	var bounds := _ring_bounds(row)
+	var height := float(row.get("heightM", 30.0))
+	var center := _ring_center(row)
+	_add_osm_mass(group, row, Color("c7b79b"))
+
+	# Slate gable over the nave, running east-west (slope across z, unlike
+	# St Mary's north-south nave).
+	var nave_length := bounds.size.x - 10.0
+	var roof_north := ArtUtil.box(group, Vector3(center.x, height + 4.6, center.y - 8.5), Vector3(nave_length, 0.9, 18.0), ROOF_SLATE)
+	roof_north.rotation.x = 0.42
+	var roof_south := ArtUtil.box(group, Vector3(center.x, height + 4.6, center.y + 8.5), Vector3(nave_length, 0.9, 18.0), ROOF_SLATE)
+	roof_south.rotation.x = -0.42
+	ArtUtil.box(group, Vector3(center.x, height + 8.4, center.y), Vector3(nave_length, 0.9, 1.8), ROOF_SLATE)
+
+	# Twin pinnacled towers flanking the west front (the real cathedral's
+	# George Street face), rising from the roof line like St Mary's pair.
+	for z_tower in [center.y - 12.0, center.y + 12.0]:
+		var tower_x := bounds.position.x + 5.5
+		ArtUtil.box(group, Vector3(tower_x, height + 14.0, z_tower), Vector3(8.0, 28.0, 8.0), STONE_LIGHT)
+		ArtUtil.box(group, Vector3(tower_x, height + 28.5, z_tower), Vector3(10.0, 1.1, 10.0), STONE)
+		ArtUtil.cylinder(group, Vector3(tower_x, height + 35.0, z_tower), 3.6, 13.0, ROOF_SLATE, 0.08)
+		ArtUtil.cylinder(group, Vector3(tower_x, height + 43.5, z_tower), 0.5, 5.0, GOLD, 0.03)
+		for z_side in [-1.0, 1.0]:
+			ArtUtil.box(group, Vector3(tower_x, height + 8.0, z_tower + z_side * 4.4), Vector3(2.2, 12.0, 1.8), STONE)
+
+	# Rose window and a gold finial cross on the west front.
+	var rose_window := ArtUtil.cylinder(
+		group, Vector3(bounds.position.x - 0.45, height * 0.72, center.y),
+		3.4, 0.22, ROOF_SLATE
+	)
+	rose_window.rotation.z = -PI * 0.5
+	var rose_trim := ArtUtil.cylinder(
+		group, Vector3(bounds.position.x - 0.6, height * 0.72, center.y), 2.3, 0.24, STONE_LIGHT, 2.1
+	)
+	rose_trim.rotation.z = -PI * 0.5
+	ArtUtil.cylinder(group, Vector3(bounds.end.x + 0.4, height + 10.4, center.y), 0.28, 2.2, GOLD, 0.05)
+
+	# Buttresses and lancets along both long (north/south) faces.
+	for index in 5:
+		var x := lerpf(bounds.position.x + 14.0, bounds.end.x - 10.0, float(index) / 4.0)
+		for side in [-1.0, 1.0]:
+			var z_buttress: float = center.y + side * (bounds.size.y * 0.44)
+			var buttress := ArtUtil.tapered_box(
+				group, Vector3(x, 11.5, z_buttress), Vector3(4.5, 22.0, 4.0),
+				Vector2(2.0, 1.3), STONE_LIGHT
+			)
+			buttress.rotation.x = side * 0.12
+			ArtUtil.box(group, Vector3(x, 15.0, z_buttress + side * 2.1), Vector3(1.3, 6.5, 0.18), WINDOW)
+
+
+## The Sydney General Post Office — the Martin Place spawn's missing
+## landmark. The mapped footprint keeps the real 97 m arcade block; this adds
+## the long sandstone colonnade along the Martin Place (north) face and the
+## clock tower campanile at its western end. No OSM tower anchor exists, so
+## the campanile's corner placement is an authored call (DECISION 9459065).
+func _build_general_post_office(world_data: Dictionary) -> void:
+	var row := _building_row(world_data, "way/282238525")
+	if row.is_empty():
+		return
+	var group := _group("GeneralPostOffice")
+	var height := float(row.get("heightM", 16.0))
+	_add_osm_mass(group, row, Color("d3c6ae"))
+
+	# The mapped ring is rotated ~6 degrees to the world grid, so the
+	# colonnade must follow the ring's actual northernmost edge - an
+	# axis-aligned colonnade floats up to 10 m off the face at the east end.
+	var ring: Array = row.get("ring", [])
+	if ring.size() < 3:
+		return
+	var north_a := Vector2.ZERO
+	var north_b := Vector2.ZERO
+	var best_z := INF
+	for index in ring.size():
+		var point := Vector2(float(ring[index][0]), float(ring[index][1]))
+		var next_point := Vector2(float(ring[(index + 1) % ring.size()][0]), float(ring[(index + 1) % ring.size()][1]))
+		var mid_z := (point.y + next_point.y) * 0.5
+		if mid_z < best_z:
+			best_z = mid_z
+			north_a = point
+			north_b = next_point
+	if north_a.x > north_b.x:
+		var swap := north_a
+		north_a = north_b
+		north_b = swap
+	var edge_dir := (north_b - north_a).normalized()
+	var edge_yaw := atan2(-edge_dir.y, edge_dir.x)
+	var centroid := Vector2.ZERO
+	for point: Array in ring:
+		centroid += Vector2(float(point[0]), float(point[1]))
+	centroid /= float(ring.size())
+	var outward := Vector2(edge_dir.y, -edge_dir.x)
+	if outward.dot(north_a - centroid) < 0.0:
+		outward = -outward
+
+	# Classical colonnade along the Martin Place frontage with capitals and a
+	# full-length entablature, 1 m proud of the mapped face.
+	for index in 14:
+		var along := north_a + edge_dir * lerpf(6.0, (north_b - north_a).length() - 6.0, float(index) / 13.0) + outward * 1.0
+		ArtUtil.box(group, Vector3(along.x, height * 0.42, along.y), Vector3(1.0, height * 0.84, 1.0), STONE_LIGHT)
+		ArtUtil.box(group, Vector3(along.x, height * 0.84 + 0.25, along.y), Vector3(2.3, 0.5, 2.3), STONE_LIGHT)
+	var entablature := ArtUtil.box(
+		group,
+		Vector3((north_a.x + north_b.x) * 0.5 + outward.x * 1.0, height * 0.92, (north_a.y + north_b.y) * 0.5 + outward.y * 1.0),
+		Vector3((north_b - north_a).length() - 4.0, 0.9, 1.6), STONE_LIGHT
+	)
+	entablature.rotation.y = edge_yaw
+
+	# The campanile: square shaft with four clock faces, cornice cap, tapered
+	# copper pyramid and gold finial, rising from the building's west end.
+	var campanile := north_a + edge_dir * 8.0 - outward * 2.0
+	_clock_tower(group, campanile, height, 9.0, 34.0, STONE_LIGHT, ROOF_SLATE)
 
 
 func _build_central_station(world_data: Dictionary) -> void:
