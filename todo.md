@@ -130,6 +130,7 @@
 - [ ] **Central Station is still broken.** [P1] [bugs] [size:M]
   Why: owner playtest; reported as still wrong after earlier fixes. Exact failure not yet described.
   Done when: owner confirms the specific issue is gone in a live playtest. Needs the owner's description of what is wrong (screenshot or location) before work starts.
+  - 2026-11-29 audit (DECISION `5ac86b2`) found and fixed three concrete defects without the owner's description: the whole authored landmark had no collision (player/cars walked through it), the mapped Station Pickup/Dropoff road rendered through the west wing, and generated building gen/central/463/0 clipped it. Shell trimmed to 80 m, collision added; `tests/central_station_test.gd` 8/0. What remains is the owner's live confirmation of their specific report — further authored-rebuild work is gated on owner visual/perf review (see the fidelity-brief landmark item).
 
 - [ ] **The city lacks depth and landmarks are not properly implemented.** [P2] [visual] [size:L]
   Why: owner feedback; the city reads flat and the landmarks are not recognisable.
