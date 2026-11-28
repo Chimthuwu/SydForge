@@ -45,6 +45,8 @@ func run() -> void:
 	await capture("st_marys_cathedral", Vector3(440.0, 2.0, -190.0), Vector3(500.0, 82.0, -195.0), 50.0)
 	await capture("hyde_park", Vector3(332.0, 3.0, -60.0), Vector3(332.0, 5.0, -178.0), 54.0)
 	await capture("central_station", Vector3(-150.0, 150.0, 1170.0), Vector3(-180.0, 12.0, 1060.0), 60.0)
+	await capture("sydney_tower_quay", Vector3(420.0, 45.0, -1400.0), Vector3(166.0, 240.0, -230.0), 46.0)
+	await capture("sydney_tower_street", Vector3(332.0, 3.0, -60.0), Vector3(166.0, 250.0, -230.0), 58.0)
 	await capture("circular_quay", Vector3(280.0, 12.0, -1500.0), Vector3(280.0, 12.0, -1375.0), 54.0)
 	await capture("darling_harbour", Vector3(-695.0, 12.0, -270.0), Vector3(-540.0, 6.0, -242.0), 54.0)
 	await capture("pyrmont_bridge", Vector3(-695.0, 12.0, -270.0), Vector3(-800.0, 7.0, -290.0), 52.0)

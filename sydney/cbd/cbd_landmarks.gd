@@ -10,6 +10,7 @@ extends Node3D
 const ArtUtil := preload("res://scripts/art.gd")
 const SydneyMeshBuilder := preload("res://sydney/sydney_mesh.gd")
 const CbdCivic := preload("res://sydney/cbd/cbd_civic.gd")
+const TOWER_ANCHOR_ID := "way/389002928"
 
 const STONE := Color("cdbb9c")
 const STONE_LIGHT := Color("e0d2b7")
@@ -30,12 +31,17 @@ func build(world_data: Dictionary) -> void:
 	_build_queen_victoria_building(world_data)
 	_build_st_marys_cathedral(world_data)
 	_build_central_station(world_data)
+	_build_sydney_tower(world_data)
 	var civic := CbdCivic.new()
 	civic.name = "SydneyCivicLandmarks"
 	civic.build(world_data)
 	add_child(civic)
 	_batch_recursive(self)
+	var tower_present := false
+	if not _building_row(world_data, TOWER_ANCHOR_ID).is_empty():
+		tower_present = true
 	stats = {
+		"sydneyTower": tower_present,
 		"queenVictoriaBuilding": true,
 		"townHall": true,
 		"stMarysCathedral": true,
@@ -365,6 +371,46 @@ func _build_central_station(world_data: Dictionary) -> void:
 			ArtUtil.box(group, Vector3(x, 13.0, z), Vector3(0.35, 0.4, 29.0), STONE_LIGHT)
 	ArtUtil.box(group, station + Vector3(0.0, 20.0, 16.0), Vector3(38.0, 4.0, 0.55), ROOF_GREEN)
 	ArtUtil.label(group, station + Vector3(0.0, 20.0, 16.35), "CENTRAL", 48)
+
+
+## Sydney Tower Eye — the CBD's tallest spire and its most recognisable
+## silhouette, previously absent. The shaft rises from the mapped Centrepoint
+## block (TOWER_ANCHOR_ID, the tallest building on its real Market/Elizabeth
+## block) so the tower is anchored to data, not a guessed position. Proportions
+## follow the real structure scaled to this world: observation pod at ~230 m,
+## golden turret, cab and the 1 MHz antenna mast to ~270 m.
+func _build_sydney_tower(world_data: Dictionary) -> void:
+	var row := _building_row(world_data, TOWER_ANCHOR_ID)
+	if row.is_empty():
+		push_warning("CBDLandmarks: Sydney Tower anchor building missing; tower skipped")
+		return
+	var group := _group("SydneyTowerLandmark")
+	var center := _ring_center(row)
+	var base := float(row.get("heightM", 44.0))
+	var shaft := Vector3(center.x, base, center.y)
+	var shaft_height := 170.0
+	# Slim concrete shaft (the real tower's 1 m-thick core reads as a needle).
+	ArtUtil.cylinder(group, shaft + Vector3(0.0, shaft_height * 0.5, 0.0), 3.4, shaft_height, Color("b9b4a8"))
+	# Podium ring and the golden observation turret.
+	var pod_y := base + shaft_height + 12.0
+	ArtUtil.cylinder(group, Vector3(center.x, base + shaft_height, center.y), 8.0, 2.4, STONE_LIGHT)
+	ArtUtil.cylinder(group, Vector3(center.x, pod_y, center.y), 13.0, 22.0, GOLD)
+	# Cabin band with dark glazing, and the upper maintenance level.
+	ArtUtil.cylinder(group, Vector3(center.x, pod_y + 8.0, center.y), 13.4, 5.0, WINDOW)
+	ArtUtil.cylinder(group, Vector3(center.x, pod_y + 15.5, center.y), 10.0, 4.0, STONE_LIGHT)
+	# Antenna mast with the red tip beacon, to ~270 m.
+	ArtUtil.cylinder(group, Vector3(center.x, pod_y + 17.5 + 18.0, center.y), 1.1, 36.0, METAL)
+	ArtUtil.cylinder(group, Vector3(center.x, pod_y + 17.5 + 37.5, center.y), 0.45, 3.0, Color("d94f43"))
+	# Solid collision: shaft and turret only (the mast stays decorative).
+	var body := StaticBody3D.new()
+	body.name = "SydneyTowerCollision"
+	group.add_child(body)
+	var shaft_collider := CollisionShape3D.new()
+	var shaft_box := BoxShape3D.new()
+	shaft_box.size = Vector3(9.0, shaft_height + 34.0, 9.0)
+	shaft_collider.shape = shaft_box
+	shaft_collider.position = Vector3(center.x, base + (shaft_height + 34.0) * 0.5, center.y)
+	body.add_child(shaft_collider)
 
 
 func _build_circular_quay(world_data: Dictionary) -> void:
