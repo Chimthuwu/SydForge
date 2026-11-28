@@ -306,20 +306,27 @@ func _build_st_marys_cathedral(world_data: Dictionary) -> void:
 func _build_central_station(world_data: Dictionary) -> void:
 	var group := _group("CentralStationLandmark")
 	var clock := Vector2(-187.6, 1034.1)
-	var station := Vector3(-174.0, 0.0, 1050.0)
+	# 2026-11-29: the shell was trimmed from 100 m to 80 m wide (west edge
+	# x -224 -> -204) because the mapped 'Station Pickup/Dropoff' road
+	# (way/784391848) and generated building gen/central/463/0 rendered
+	# straight through the west wing. The box collision below keeps the
+	# landmark solid like the other authored landmarks (QVB/Town Hall/St
+	# Mary's), which previously let the player and cars walk through it.
+	var half_width := 40.0
+	var station := Vector3(-164.0, 0.0, 1050.0)
 
 	# A sandstone grand-concourse frontage and the unmistakable Central clock
 	# tower. The station export has transit locations but no complete building
 	# shell, so the OSM clocktower point anchors the authored silhouette.
-	ArtUtil.box(group, station + Vector3(0.0, 8.0, 0.0), Vector3(100.0, 16.0, 30.0), Color("b89b77"))
-	ArtUtil.box(group, station + Vector3(0.0, 16.5, 0.0), Vector3(108.0, 1.0, 34.0), STONE_LIGHT)
-	for index in 10:
-		var x := station.x - 45.0 + float(index) * 10.0
+	ArtUtil.box(group, station + Vector3(0.0, 8.0, 0.0), Vector3(80.0, 16.0, 30.0), Color("b89b77"))
+	ArtUtil.box(group, station + Vector3(0.0, 16.5, 0.0), Vector3(88.0, 1.0, 34.0), STONE_LIGHT)
+	for index in 8:
+		var x := station.x - 35.0 + float(index) * 10.0
 		ArtUtil.box(group, Vector3(x, 7.0, station.z + 15.8), Vector3(1.1, 13.0, 1.1), STONE_LIGHT)
 		ArtUtil.box(group, Vector3(x, 8.0, station.z + 16.45), Vector3(4.2, 5.0, 0.25), WINDOW)
 		ArtUtil.box(group, Vector3(x, 7.0, station.z - 15.8), Vector3(1.1, 13.0, 1.1), STONE_LIGHT)
 		ArtUtil.box(group, Vector3(x, 8.0, station.z - 16.45), Vector3(4.2, 5.0, 0.25), WINDOW)
-	var west_face := station.x - 50.8
+	var west_face := station.x - half_width - 0.8
 	for index in 9:
 		var z := station.z - 13.0 + float(index) * 3.25
 		ArtUtil.box(group, Vector3(west_face, 7.0, z), Vector3(0.9, 14.0, 1.0), STONE_LIGHT)
@@ -328,6 +335,24 @@ func _build_central_station(world_data: Dictionary) -> void:
 	var station_sign := ArtUtil.label(group, Vector3(west_face - 0.8, 20.5, station.z), "CENTRAL", 84)
 	station_sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_clock_tower(group, clock, 17.0, 14.0, 50.0, STONE_LIGHT, ROOF_GREEN)
+
+	# Solid collision for the frontage and the clock tower shaft (the roof
+	# canopies behind stay walk/drive-under, as they really are).
+	var body := StaticBody3D.new()
+	body.name = "CentralStationCollision"
+	group.add_child(body)
+	var shell := CollisionShape3D.new()
+	var shell_box := BoxShape3D.new()
+	shell_box.size = Vector3(80.0, 17.0, 30.0)
+	shell.shape = shell_box
+	shell.position = station + Vector3(0.0, 8.5, 0.0)
+	body.add_child(shell)
+	var tower := CollisionShape3D.new()
+	var tower_box := BoxShape3D.new()
+	tower_box.size = Vector3(14.0, 50.0, 14.0)
+	tower.shape = tower_box
+	tower.position = Vector3(clock.x, 17.0 + 25.0, clock.y)
+	body.add_child(tower)
 
 	# Repeated iron platform canopies behind the concourse, aligned north-south
 	# along the existing rail-station footprint.
