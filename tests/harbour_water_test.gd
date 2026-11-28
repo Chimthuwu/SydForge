@@ -116,7 +116,11 @@ func run() -> void:
 		"Farm Cove": [800.0, -1730.0, true],
 		"Woolloomooloo Bay": [1150.0, -1500.0, true],
 		"Darling Harbour": [-650.0, -300.0, true],
-		"Blackwattle Bay": [-1150.0, 0.0, true],
+		"Blackwattle Bay arm": [-1040.0, -650.0, true],
+		"Blackwattle Bay tip": [-1010.0, -590.0, true],
+		"Ultimo streets (old bay blob)": [-1140.0, -100.0, false],
+		"old blob south tail": [-1150.0, 0.0, false],
+		"old blob mid": [-1100.0, -250.0, false],
 		"under the bridge midspan": [250.0, -2300.0, true],
 		"eastern harbour": [1200.0, -2200.0, true],
 		"Opera House podium": [658.7, -1763.8, false],
@@ -264,6 +268,35 @@ func run() -> void:
 			wet_buildings += 1
 	check(wet_buildings == 0, "no sampled Stage A building centroid is in water (%d)" % wet_buildings)
 
+	# 2026-11-29 regression: the authored Blackwattle Bay overlay once swallowed
+	# mapped Ultimo land (96 streets, 1121 footpath points, 116 buildings inside
+	# it — the "blue ground beside footpaths" report). The reshaped arm must
+	# keep every mapped road, footpath and building west of the CBD dry.
+	var stage_b := _load_stage_b()
+	if not stage_b.is_empty():
+		var wet := {"roads": 0, "footpaths": 0, "buildings": 0}
+		var sampled := {"roads": 0, "footpaths": 0, "buildings": 0}
+		for road in stage_b.get("roads", []):
+			for point in road.get("points", []):
+				_bbox_sample(point, harbour, wet, sampled, "roads")
+		for footpath in stage_b.get("footpaths", []):
+			for point in footpath.get("points", []):
+				_bbox_sample(point, harbour, wet, sampled, "footpaths")
+		for building in stage_b.get("buildings", []):
+			var ring: Array = building.get("ring", building.get("rings", []))
+			if ring is Dictionary:
+				ring = ring.get("outer", [])
+			if ring.is_empty():
+				continue
+			var point: Array = ring[0]
+			_bbox_sample(point, harbour, wet, sampled, "buildings")
+		check(sampled.roads > 500, "stage B west-bbox road sample is meaningful (%d)" % sampled.roads)
+		check(sampled.footpaths > 300, "stage B west-bbox footpath sample is meaningful (%d)" % sampled.footpaths)
+		check(sampled.buildings > 50, "stage B west-bbox building sample is meaningful (%d)" % sampled.buildings)
+		check(wet.roads == 0, "no mapped stage B road point lies in harbour water (%d)" % wet.roads)
+		check(wet.footpaths == 0, "no mapped stage B footpath point lies in harbour water (%d)" % wet.footpaths)
+		check(wet.buildings == 0, "no mapped stage B building lies in harbour water (%d)" % wet.buildings)
+
 	# ---------------------------------------------------- player behaviour ----
 	var spawn: Vector3 = scene.player.global_position
 	check(not harbour.is_water(spawn.x, spawn.z), "Circular Quay spawn is on land")
@@ -304,12 +337,14 @@ func run() -> void:
 		"player stops at the Darling Harbour shoreline (%.2f m)" % _nearest_shore(harbour, darling_stopped).distance_to(darling_stopped))
 	check(scene.player.global_position.y > -0.5, "player stands on the Darling Harbour shore")
 
-	# Walk into Blackwattle Bay from Pyrmont collar land (new water + new floor).
-	_place(scene, Vector3(-950.0, 0.4, -300.0))
+	# Walk into the reshaped Blackwattle Bay arm from the Ultimo side collar
+	# land (the 2026-11-29 reshape: the arm's east shore runs from the tip
+	# (-1000.2,-578.9) to (-968.9,-676.8), so (-950,-640) is ~30 m of land).
+	_place(scene, Vector3(-950.0, 0.4, -640.0))
 	await _settle(25)
-	check(scene.player.global_position.y > -0.5, "Pyrmont collar land is walkable (no fall-through)")
-	check(not harbour.is_water(-950.0, -300.0), "Blackwattle walk start is on land")
-	var black_from := Vector2(-950.0, -300.0)
+	check(scene.player.global_position.y > -0.5, "Ultimo collar land is walkable (no fall-through)")
+	check(not harbour.is_water(-950.0, -640.0), "Blackwattle walk start is on land")
+	var black_from := Vector2(-950.0, -640.0)
 	var black_shore := _nearest_shore(harbour, black_from)
 	var black_inland := (black_from - black_shore).normalized()
 	var black_start := black_shore + black_inland * 3.0
@@ -325,6 +360,40 @@ func run() -> void:
 
 	print("WORLD BUILD ", world.build_times_ms)
 	_finish(scene)
+
+
+func _load_stage_b() -> Dictionary:
+	var path := "res://sydney/world/stage_b/world.json"
+	if not FileAccess.file_exists(path):
+		push_warning("harbour_water_test: stage B world.json missing; land/water regression skipped")
+		return {}
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return {}
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) != OK:
+		push_warning("harbour_water_test: stage B world.json failed to parse")
+		return {}
+	var parsed = json.data
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+
+
+## Count a stage B point inside the mapped-land west bbox against the harbour
+## rings: the bbox (Ultimo/Pyrmont/Blackwattle, x -1450..-900, z -1100..400)
+## bounds the cost; points outside can never be inside the west rings.
+func _bbox_sample(point: Array, harbour: Node, wet: Dictionary, sampled: Dictionary, key: String) -> void:
+	if point.size() < 2:
+		return
+	var x := float(point[0])
+	var z := float(point[1])
+	if x < -1450.0 or x > -900.0 or z < -1100.0 or z > 400.0:
+		return
+	sampled[key] = int(sampled[key]) + 1
+	var position := Vector2(x, z)
+	for ring in harbour.rings:
+		if Geometry2D.is_point_in_polygon(position, ring):
+			wet[key] = int(wet[key]) + 1
+			return
 
 
 func _finish(scene: Node3D) -> void:

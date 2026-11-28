@@ -60,16 +60,22 @@ HARBOUR_SOURCES = [
 ]
 
 # Authored extension: Blackwattle Bay is real water but absent from every
-# pipeline water feature (verified against raw and normalized payloads), so it
-# is approximated here per the relaxed creative direction. The mouth overlaps
-# the mapped Johnstons Bay arm so the union is seamless; shores follow the real
-# bay (Pyrmont west / Glebe east), ~280 m at the mouth narrowing to ~170 m at
-# the Glebe tip.
+# pipeline water feature (verified against raw and normalized payloads), so the
+# arm is supplied here. Shores are the ones the Stage B CBD export maps
+# (stage_b world.json water.rings[0] pts 420-428, same projection): a narrow
+# diagonal corridor from the mapped Johnstons Bay arm (mouth chord
+# (-1070.6,-715.3) -> (-986.5,-622.2), which the pipeline ring cuts straight
+# across) down to the tip near Wentworth Park (-1000.2,-578.9).
+# 2026-11-29: the previous approximation (-1265,-520)..(-985,-620)..(-1150,312)
+# swallowed mapped Ultimo land (96 streets, 1121 footpath points, 116
+# buildings) — the owner's "blue ground beside footpaths" report. Reshaped.
 AUTHORED_BLACKWATTLE = [
-    (-1265.0, -520.0), (-1240.0, -600.0), (-1180.0, -660.0), (-1100.0, -680.0),
-    (-1020.0, -670.0), (-985.0, -620.0), (-1010.0, -350.0), (-1035.0, -120.0),
-    (-1050.0, 80.0), (-1062.0, 220.0), (-1090.0, 300.0), (-1150.0, 312.0),
-    (-1195.0, 288.0), (-1222.0, 100.0), (-1240.0, -120.0), (-1255.0, -350.0),
+    (-1070.6, -715.3),
+    (-1092.0, -653.4), (-1086.4, -651.5), (-1088.3, -645.8), (-1094.0, -647.7),
+    (-1099.2, -635.0), (-1092.4, -628.6), (-1098.5, -611.8),
+    (-1000.2, -578.9),
+    (-968.9, -676.8),
+    (-986.5, -622.2),
 ]
 
 
@@ -206,8 +212,9 @@ def main():
         "FarmCove": cover(800.0, -1730.0),
         "WoolloomoolooBay": cover(1150.0, -1500.0),
         "DarlingHarbour": cover(-650.0, -300.0),
-        "BlackwattleBay": cover(-1150.0, 0.0),
-        "BlackwattleTip": cover(-1150.0, 280.0),
+        "BlackwattleBay": cover(-1040.0, -650.0),
+        "BlackwattleTip": cover(-1010.0, -590.0),
+        "UltimoStreetsDry": not cover(-1140.0, -100.0),
         "GlebeLandDry": not cover(-1350.0, 0.0),
         "PyrmontLandDry": not cover(-950.0, -150.0),
         "UnderBridgeMidspan": cover(250.0, -2300.0),
@@ -236,9 +243,11 @@ def main():
             "license": "ODbL 1.0 (OSM parts); authored parts original",
             "features": HARBOUR_SOURCES,
             "authored": {
-                "blackwattleBay": "absent from all pipeline water features; approximated "
-                                  "from the real bay outline, mouth overlapped onto the "
-                                  "mapped Johnstons Bay arm",
+                "blackwattleBay": "absent from all pipeline water features; the arm follows "
+                                  "the shores the stage B CBD export maps (its tip near "
+                                  "Wentworth Park, mouth on the mapped Johnstons Bay arm); "
+                                  "2026-11-29 reshaped after the first approximation "
+                                  "swallowed mapped Ultimo land",
             },
             "pipelineFile": "data/normalized/waterways.json",
             "projection": "equirectangular about -33.873/151.208; 92459.893 m/deg lon, 111019.656 m/deg lat; north = -Z",
