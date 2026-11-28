@@ -38,6 +38,13 @@ const STORES := [
 	},
 ]
 
+## Full-size supermarket frontage, in metres.
+const TARGET_WIDTH := 36.0
+const MIN_WIDTH := 14.0
+const MIN_HOST_HEIGHT := 8.0
+const SEARCH_RADIUS := 110.0
+const MAX_BEND_M := 0.8
+
 var stats: Dictionary = {}
 var stores: Array[Node3D] = []
 var _player: Node
@@ -89,51 +96,84 @@ func _nearest_brand_poi(rows: Array, brand: String, anchor: Vector2) -> Dictiona
 	return best
 
 
+## The best big frontage near a branch: wide beats merely close, because these
+## are full-size supermarkets rather than corner shops.
 func _nearest_facade(world_data: Dictionary, point: Vector2) -> Dictionary:
 	var best: Dictionary = {}
-	# A supermarket POI often sits in the middle of a large centre (The Galeries,
-	# Central Park), so its exterior frontage can be well over 26 m away.
-	var best_distance := 70.0
+	var best_score := -INF
+	var nearby: Array = []
 	for row: Dictionary in world_data.get("buildings", []):
-		var id := str(row.get("id", ""))
-		if id in AUTHORED_LANDMARKS:
-			continue
 		var ring: Array = row.get("ring", [])
 		if ring.size() < 3:
 			continue
-		var orientation := _orientation(ring)
-		for index in ring.size():
-			var a_raw: Array = ring[index]
-			var b_raw: Array = ring[(index + 1) % ring.size()]
-			if a_raw.size() < 2 or b_raw.size() < 2:
+		var polygon := PackedVector2Array()
+		for vertex: Array in ring:
+			polygon.append(Vector2(float(vertex[0]), float(vertex[1])))
+		if polygon[0].distance_to(point) < SEARCH_RADIUS + 220.0:
+			nearby.append({"row": row, "ring": polygon})
+	for entry: Dictionary in nearby:
+		var row: Dictionary = entry["row"]
+		var id := str(row.get("id", ""))
+		var height := float(row.get("heightM", 0.0))
+		if id in AUTHORED_LANDMARKS or height < MIN_HOST_HEIGHT:
+			continue
+		var orientation := _orientation(row.get("ring", []))
+		for run: Array in _straight_runs(entry["ring"]):
+			var a: Vector2 = run[0]
+			var b: Vector2 = run[1]
+			var length := a.distance_to(b)
+			var width := minf(TARGET_WIDTH, length - 1.0)
+			if width < MIN_WIDTH:
 				continue
-			var a := Vector2(float(a_raw[0]), float(a_raw[1]))
-			var b := Vector2(float(b_raw[0]), float(b_raw[1]))
-			var edge := b - a
-			var length := edge.length()
-			# OSM splits long facades at every entrance, so a 13 m frontage must
-			# be allowed to shrink onto a shorter segment instead of skipping.
-			if length < 6.0:
-				continue
-			var tangent := edge / length
+			var tangent := (b - a) / length
 			var outward := Vector2(tangent.y, -tangent.x) * orientation
-			var t := clampf((point - a).dot(tangent), 0.0, length)
-			var projection := a + tangent * t
-			var distance := projection.distance_to(point)
-			if distance >= best_distance:
+			var along := clampf((point - a).dot(tangent), width * 0.5 + 0.5, length - width * 0.5 - 0.5)
+			var spot := a + tangent * along
+			var distance := spot.distance_to(point)
+			if distance > SEARCH_RADIUS:
 				continue
-			var width := minf(13.0, length - 1.0)
-			if width < 6.0:
+			var score := width * 1.2 - distance
+			if score <= best_score or not _is_open_frontage(spot, tangent, outward, width, id, nearby):
 				continue
-			var along := clampf(t, width * 0.5 + 0.6, length - width * 0.5 - 0.6)
-			best_distance = distance
+			best_score = score
 			best = {
-				"point": a + tangent * along,
-				"outward": outward,
-				"building": id,
-				"width": width,
+				"point": spot, "outward": outward, "building": id,
+				"width": width, "height": height,
 			}
 	return best
+
+
+## Consecutive wall pieces that continue in the same direction, as [start, end].
+func _straight_runs(ring: PackedVector2Array) -> Array:
+	var runs: Array = []
+	var count := ring.size()
+	for first in count:
+		var start := ring[first]
+		var heading := (ring[(first + 1) % count] - start).normalized()
+		var end := start
+		for step in range(1, count):
+			var next := ring[(first + step) % count]
+			if next.distance_to(end) < 0.01:
+				continue
+			# Every vertex must stay close to the first segment's line.
+			if absf((next - start).cross(heading)) > MAX_BEND_M or (next - end).dot(heading) <= 0.0:
+				break
+			end = next
+		if start.distance_to(end) >= MIN_WIDTH:
+			runs.append([start, end])
+	return runs
+
+
+## True when nothing else stands directly in front of the whole shopfront.
+func _is_open_frontage(spot: Vector2, tangent: Vector2, outward: Vector2, width: float,
+		own_id: String, nearby: Array) -> bool:
+	for offset in [-0.45, -0.22, 0.0, 0.22, 0.45]:
+		var probe: Vector2 = spot + tangent * width * float(offset) + outward * 3.0
+		for entry: Dictionary in nearby:
+			if str(entry["row"].get("id", "")) != own_id \
+			and Geometry2D.is_point_in_polygon(probe, entry["ring"]):
+				return false
+	return true
 
 
 func _orientation(ring: Array) -> float:
@@ -170,25 +210,8 @@ func _build_store(index: int, spec: Dictionary, facade: Dictionary, poi: Diction
 	door.name = "Entrance"
 	door.position = Vector3(0.0, 0.0, 0.55)
 	store.add_child(door)
-	# Shopfront: fascia, glazing, automatic doors, trolley bay.
-	ArtUtil.box(store, Vector3(0.0, 4.25, 0.25), Vector3(width, 1.3, 0.35), color)
-	ArtUtil.box(store, Vector3(0.0, 4.98, 0.28), Vector3(width + 0.3, 0.16, 0.45), color.lightened(0.25))
-	var sign := ArtUtil.label(store, Vector3(0.0, 4.28, 0.46), str(spec["name"]), 62)
-	sign.modulate = lettering
-	sign.outline_modulate = color.darkened(0.5)
-	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	ArtUtil.box(store, Vector3(-3.3, 1.7, 0.18), Vector3(5.3, 2.9, 0.16), Color("273f47"))
-	ArtUtil.box(store, Vector3(3.3, 1.7, 0.18), Vector3(5.3, 2.9, 0.16), Color("273f47"))
-	ArtUtil.box(store, Vector3(-3.3, 1.7, 0.28), Vector3(4.8, 2.4, 0.08), Color("e5c785"))
-	ArtUtil.box(store, Vector3(3.3, 1.7, 0.28), Vector3(4.8, 2.4, 0.08), Color("e5c785"))
-	ArtUtil.box(store, Vector3(0.0, 1.55, 0.30), Vector3(2.4, 2.7, 0.10), Color("aeb8b1"))
-	ArtUtil.box(store, Vector3(0.0, 1.55, 0.37), Vector3(0.10, 2.5, 0.08), Color("596b66"))
-	for x in [-1.0, 1.0]:
-		ArtUtil.cylinder(store, Vector3(x * 3.9, 0.65, 1.4), 0.05, 1.3, Color("69706a"))
-		ArtUtil.box(store, Vector3(x * 3.9, 1.3, 1.4), Vector3(1.0, 0.08, 0.7), Color("8a8f88"))
-	for trolley in 3:
-		ArtUtil.box(store, Vector3(-5.8 + float(trolley) * 0.7, 0.62, 1.7), Vector3(0.55, 0.6, 0.85), Color("8c9693"))
-		ArtUtil.box(store, Vector3(-5.8 + float(trolley) * 0.7, 1.0, 1.7), Vector3(0.50, 0.1, 0.80), Color("3a4544"))
+	store.set_meta("frontage_width", width)
+	_build_shopfront(store, str(spec["name"]), color, lettering, width)
 
 	# Interior room, placed in an unused authored pocket so it cannot intersect
 	# the city. Player collision is real; the entrance/exit is a teleport.
@@ -257,6 +280,55 @@ func _build_store(index: int, spec: Dictionary, facade: Dictionary, poi: Diction
 	store.set_meta("alarm", false)
 	store.set_meta("entry_cooldown", 0.0)
 	stores.append(store)
+
+
+## Two-storey supermarket frontage: a tall glazed ground floor, a deep brand
+## band with oversized lettering, and an upper window level under a parapet.
+func _build_shopfront(store: Node3D, title: String, color: Color, lettering: Color, width: float) -> void:
+	var half := width * 0.5
+	var frame := Color("596b66")
+	# Corner piers in the brand colour.
+	for side in [-1.0, 1.0]:
+		ArtUtil.box(store, Vector3(side * (half - 0.45), 4.6, 0.30), Vector3(0.9, 9.2, 0.6), color.darkened(0.15))
+	# Ground floor: dark glazing, lit interior behind, mullions every 3 m.
+	var bay := half - 2.9  # glass either side of the doors
+	for side in [-1.0, 1.0]:
+		var centre: float = side * (2.0 + bay * 0.5)
+		ArtUtil.box(store, Vector3(centre, 2.1, 0.16), Vector3(bay, 3.9, 0.16), Color("273f47"))
+		ArtUtil.box(store, Vector3(centre, 2.05, 0.26), Vector3(bay - 0.4, 3.3, 0.08), Color("e5c785"))
+		var panes := maxi(2, roundi(bay / 3.0))
+		for index in panes + 1:
+			var x := centre - bay * 0.5 + bay * float(index) / float(panes)
+			ArtUtil.box(store, Vector3(x, 2.1, 0.34), Vector3(0.14, 3.9, 0.10), frame)
+	# Wide double automatic doors.
+	ArtUtil.box(store, Vector3(0.0, 1.85, 0.30), Vector3(3.8, 3.5, 0.10), Color("aeb8b1"))
+	for x in [-1.9, 0.0, 1.9]:
+		ArtUtil.box(store, Vector3(x, 1.85, 0.37), Vector3(0.12, 3.5, 0.08), frame)
+	# Awning the full width, over the footpath.
+	ArtUtil.box(store, Vector3(0.0, 4.35, 1.25), Vector3(width, 0.22, 2.3), color.darkened(0.2))
+	# Brand band and lettering.
+	ArtUtil.box(store, Vector3(0.0, 5.85, 0.32), Vector3(width, 2.5, 0.5), color)
+	var sign := ArtUtil.label(store, Vector3(0.0, 5.85, 0.62), title, 180)
+	sign.modulate = lettering
+	sign.outline_modulate = color.darkened(0.5)
+	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	sign.name = "StoreSign"
+	# Keep the lettering inside narrower frontages.
+	sign.font_size = int(clampf((width - 2.0) / (float(title.length()) * 0.0062), 90.0, 180.0))
+	# Upper level windows and parapet.
+	ArtUtil.box(store, Vector3(0.0, 8.05, 0.18), Vector3(width - 1.8, 1.8, 0.2), Color("2b414c"))
+	var uppers := maxi(3, roundi(width / 3.0))
+	for index in uppers + 1:
+		var x := -half + 0.9 + (width - 1.8) * float(index) / float(uppers)
+		ArtUtil.box(store, Vector3(x, 8.05, 0.30), Vector3(0.18, 1.8, 0.12), color.lightened(0.35))
+	ArtUtil.box(store, Vector3(0.0, 9.2, 0.34), Vector3(width + 0.4, 0.5, 0.7), color.lightened(0.25))
+	# Trolley bays either side of the entrance.
+	for side in [-1.0, 1.0]:
+		for trolley in 5:
+			var x: float = side * (3.6 + float(trolley) * 0.7)
+			if absf(x) < half - 1.2:
+				ArtUtil.box(store, Vector3(x, 0.62, 1.7), Vector3(0.55, 0.6, 0.85), Color("8c9693"))
+				ArtUtil.box(store, Vector3(x, 1.0, 1.7), Vector3(0.50, 0.1, 0.80), Color("3a4544"))
 
 
 ## District delegates the E interaction here. Outside, the call enters; inside,

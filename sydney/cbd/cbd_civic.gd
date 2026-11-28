@@ -34,9 +34,26 @@ var stats: Dictionary = {}
 var _materials: Dictionary = {}
 
 
+const HydeParkLayout := preload("res://sydney/cbd/hyde_park_layout.gd")
+
+## Where the Hyde Park benches ended up, for the layout regression.
+var bench_spots: Array[Vector2] = []
+var _roads: Array = []
+var _hyde_rings: Array = []
+
+
 func build(world_data: Dictionary) -> void:
 	name = "SydneyCivicLandmarks"
 	_build_town_hall(world_data)
+	_roads = world_data.get("roads", [])
+	_hyde_rings.clear()
+	for park: Dictionary in world_data.get("parks", []):
+		if str(park.get("id", "")) in HydeParkLayout.PARK_IDS:
+			for ring: Array in park.get("rings", []):
+				var polygon := PackedVector2Array()
+				for point: Array in ring:
+					polygon.append(Vector2(float(point[0]), float(point[1])))
+				_hyde_rings.append(polygon)
 	_build_hyde_park()
 	_build_circular_quay(world_data)
 	_build_darling_harbour(world_data)
@@ -382,36 +399,48 @@ func _add_clock_face(parent: Node3D, center: Vector3, radius: float, angle: floa
 
 func _build_hyde_park() -> void:
 	var group := _group("HydeParkLandmarks")
-	var axis_x := 332.0
-	var north_edge := -338.0
-	var south_edge := 414.0
-	var mid_north := -46.0
-	var mid_south := 56.0
-	var fountain_z := -178.0
-	var memorial_z := 342.0
+	var axis_x := HydeParkLayout.FOUNTAIN.x
+	var north_edge := -332.0
+	var south_edge := 405.0
+	var fountain_z := HydeParkLayout.FOUNTAIN.y
 
-	# Formal axial promenade and cross walks. The park itself is already the OSM
-	# polygon; these are paved paths laid on top of it.
-	_path(group, Vector3(axis_x, 0.10, (north_edge + fountain_z - 17.0) * 0.5), 13.0, absf((fountain_z - 17.0) - north_edge))
-	_path(group, Vector3(axis_x, 0.10, (fountain_z + 17.0 + mid_north) * 0.5), 13.0, absf(mid_north - (fountain_z + 17.0)))
-	_path(group, Vector3(axis_x, 0.10, (mid_south + memorial_z - 17.0) * 0.5), 12.0, absf((memorial_z - 17.0) - mid_south))
-	_path(group, Vector3(axis_x, 0.10, (memorial_z + 28.0 + south_edge) * 0.5), 10.0, absf(south_edge - (memorial_z + 28.0)))
-	for z in [-262.0, -96.0, -16.0, 86.0, 190.0, 292.0]:
-		_path(group, Vector3(298.0, 0.09, z), 94.0, 6.0, true)
+	# The OSM walkways inside the park arrive as road ribbons and were drawn as
+	# black asphalt. Pave over them, then lay the authored avenue and walks.
+	var paving := Color("b9a98c")
+	for road: Dictionary in _roads:
+		if str(road.get("highway", "")) != "pedestrian":
+			continue
+		var points: Array = road.get("points", [])
+		for i in range(points.size() - 1):
+			var a := Vector2(float(points[i][0]), float(points[i][1]))
+			var b := Vector2(float(points[i + 1][0]), float(points[i + 1][1]))
+			if _in_hyde_park((a + b) * 0.5):
+				_paving_strip(group, a, b, float(road.get("widthM", 8.0)) + 0.4, 0.14, paving)
+	var height := 0.155
+	for path: Array in HydeParkLayout.paths():
+		_paving_strip(group, path[0], path[1], float(path[2]), height, paving.lightened(0.06))
+		height += 0.002  # crossings of two walks must not z-fight
+
+	# Benches sit just off the paving, facing it, and never near a road.
+	for path: Array in HydeParkLayout.paths():
+		var a: Vector2 = path[0]
+		var b: Vector2 = path[1]
+		var along := (b - a).normalized()
+		var side := Vector2(-along.y, along.x)
+		var travel := 14.0
+		var flip := 1.0
+		while travel < a.distance_to(b) - 10.0:
+			var spot := a + along * travel + side * flip * (float(path[2]) * 0.5 + 0.7)
+			if _in_hyde_park(spot) and not HydeParkLayout.on_monument(spot, 0.0) \
+			and not HydeParkLayout.near_road(spot, _roads, 3.0):
+				var facing := -side * flip
+				_bench(group, Vector3(spot.x, 0.0, spot.y), atan2(facing.x, facing.y))
+				bench_spots.append(spot)
+			travel += 26.0
+			flip = -flip
 	for lamp_z in [fountain_z - 27.0, fountain_z + 27.0]:
 		for lamp_x in [axis_x - 15.0, axis_x + 15.0]:
 			_park_lamp(group, Vector3(lamp_x, 0.0, lamp_z))
-	for index in 5:
-		var z := -300.0 + float(index) * 22.0
-		_bench(group, Vector3(axis_x - 8.4, 0.0, z), PI * 0.5)
-		_bench(group, Vector3(axis_x + 8.4, 0.0, z + 11.0), -PI * 0.5)
-	for index in 5:
-		var z := 110.0 + float(index) * 32.0
-		_bench(group, Vector3(axis_x - 8.2, 0.0, z), PI * 0.5)
-		_bench(group, Vector3(axis_x + 8.2, 0.0, z + 16.0), -PI * 0.5)
-	for index in 4:
-		var x := 292.0 + float(index) * 26.0
-		_bench(group, Vector3(x, 0.0, 62.0), 0.0)
 
 	# Archibald Fountain: broad paved apron, two basins, bronze group and jets.
 	var apron := ArtUtil.cylinder(group, Vector3(axis_x, 0.13, fountain_z), 18.0, 0.22, STONE_LIGHT.darkened(0.08))
@@ -447,7 +476,7 @@ func _build_hyde_park() -> void:
 	fountain_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 
 	# Hyde Park Obelisk: stepped plinth and a slim tapered shaft.
-	var obelisk_center := Vector3(270.0, 0.0, -300.0)
+	var obelisk_center := Vector3(HydeParkLayout.OBELISK.x, 0.0, HydeParkLayout.OBELISK.y)
 	for step in 3:
 		_box(group, obelisk_center + Vector3(0.0, 0.18 + float(step) * 0.36, 0.0), Vector3(9.0 - float(step) * 1.6, 0.36, 9.0 - float(step) * 1.6), STONE_LIGHT)
 	_box(group, obelisk_center + Vector3(0.0, 1.55, 0.0), Vector3(4.2, 1.4, 4.2), STONE)
@@ -461,7 +490,9 @@ func _build_hyde_park() -> void:
 	var memorial := Node3D.new()
 	memorial.name = "AnzacMemorial"
 	group.add_child(memorial)
-	var mc := Vector3(300.0, 0.0, memorial_z)
+	var memorial_x := HydeParkLayout.MEMORIAL.x
+	var memorial_z := HydeParkLayout.MEMORIAL.y
+	var mc := Vector3(memorial_x, 0.0, memorial_z)
 	for step in 3:
 		_box(memorial, mc + Vector3(0.0, 0.14 + float(step) * 0.26, 0.0), Vector3(30.0 - float(step) * 2.2, 0.26, 23.0 - float(step) * 2.2), STONE_LIGHT.darkened(0.06))
 	_box(memorial, mc + Vector3(0.0, 1.35, 0.0), Vector3(23.0, 1.5, 17.0), STONE)
@@ -480,43 +511,45 @@ func _build_hyde_park() -> void:
 	for x in [-9.5, 9.5]:
 		_box(memorial, mc + Vector3(x, 3.0, 5.1), Vector3(1.2, 2.4, 1.2), STONE_LIGHT)
 		ArtUtil.sphere(memorial, mc + Vector3(x, 4.5, 5.1), 0.55, BRONZE)
-	# Pool of Reflection, south of the hall.
-	var pool_z := memorial_z + 42.0
-	_box(memorial, Vector3(300.0, 0.10, pool_z), Vector3(38.0, 0.20, 16.5), STONE_LIGHT.darkened(0.10))
-	_box_material(memorial, Vector3(300.0, 0.22, pool_z), Vector3(35.0, 0.08, 13.5), _water_material())
-	for x in [-19.0, 19.0]:
-		_box(memorial, Vector3(300.0 + x, 0.35, pool_z), Vector3(0.7, 0.6, 17.0), STONE)
-	for z in [-8.5, 8.5]:
-		_box(memorial, Vector3(300.0, 0.35, pool_z + z), Vector3(38.5, 0.6, 0.7), STONE)
-	var pool_label := ArtUtil.label(memorial, Vector3(300.0, 2.0, pool_z + 9.3), "LEST WE FORGET", 40)
+	# Pool of Reflection, on the northern (city) side of the hall.
+	var pool := Vector3(HydeParkLayout.POOL.x, 0.0, HydeParkLayout.POOL.y)
+	var wide := HydeParkLayout.POOL_SIZE.x
+	var long := HydeParkLayout.POOL_SIZE.y
+	_box(memorial, pool + Vector3(0.0, 0.10, 0.0), Vector3(wide + 3.0, 0.20, long + 3.0), STONE_LIGHT.darkened(0.10))
+	_box_material(memorial, pool + Vector3(0.0, 0.22, 0.0), Vector3(wide, 0.08, long), _water_material())
+	for x in [-1.0, 1.0]:
+		_box(memorial, pool + Vector3(x * (wide * 0.5 + 0.35), 0.35, 0.0), Vector3(0.7, 0.6, long + 1.4), STONE)
+		_box(memorial, pool + Vector3(0.0, 0.35, x * (long * 0.5 + 0.35)), Vector3(wide + 1.4, 0.6, 0.7), STONE)
+	var pool_label := ArtUtil.label(memorial, pool + Vector3(0.0, 2.0, -long * 0.5 - 2.0), "LEST WE FORGET", 40)
 	pool_label.modulate = Color("5a4a35")
-	pool_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	pool_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 
 	# Park gates and boundary piers on the main axis.
-	for z in [north_edge, south_edge]:
-		for x in [axis_x - 7.0, axis_x + 7.0]:
+	for gate: Vector2 in [Vector2(331.0, north_edge), Vector2(284.0, south_edge)]:
+		var z := gate.y
+		for x in [gate.x - 7.0, gate.x + 7.0]:
 			_box(group, Vector3(x, 1.5, z), Vector3(1.5, 3.0, 1.5), STONE_LIGHT)
 			ArtUtil.sphere(group, Vector3(x, 3.2, z), 0.42, STONE_LIGHT)
-		var gate_label := ArtUtil.label(group, Vector3(axis_x, 4.2, z), "HYDE PARK", 56)
+		var gate_label := ArtUtil.label(group, Vector3(gate.x, 4.2, z), "HYDE PARK", 56)
 		gate_label.modulate = Color("d8c9aa")
 		gate_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 
 
-func _path(parent: Node3D, position: Vector3, width: float, length: float, horizontal: bool = false) -> void:
-	var size := Vector3(length, 0.12, width) if horizontal else Vector3(width, 0.12, length)
-	_box(parent, position, size, Color("b8aa90"))
-	var edge_a: Vector3
-	var edge_b: Vector3
-	if horizontal:
-		edge_a = position + Vector3(0.0, 0.03, width * 0.5 + 0.14)
-		edge_b = position - Vector3(0.0, 0.03, width * 0.5 + 0.14)
-		_box(parent, edge_a, Vector3(length, 0.16, 0.20), STONE)
-		_box(parent, edge_b, Vector3(length, 0.16, 0.20), STONE)
-	else:
-		edge_a = position + Vector3(width * 0.5 + 0.14, 0.03, 0.0)
-		edge_b = position - Vector3(width * 0.5 + 0.14, 0.03, 0.0)
-		_box(parent, edge_a, Vector3(0.20, 0.16, length), STONE)
-		_box(parent, edge_b, Vector3(0.20, 0.16, length), STONE)
+func _in_hyde_park(point: Vector2) -> bool:
+	for ring: PackedVector2Array in _hyde_rings:
+		if Geometry2D.is_point_in_polygon(point, ring):
+			return true
+	return false
+
+
+func _paving_strip(parent: Node3D, a: Vector2, b: Vector2, width: float, height: float, color: Color) -> void:
+	var delta := b - a
+	if delta.length() < 0.1:
+		return
+	var middle := (a + b) * 0.5
+	var strip := _box(parent, Vector3(middle.x, height - 0.03, middle.y),
+		Vector3(width, 0.06, delta.length() + width * 0.35), color)
+	strip.rotation.y = atan2(delta.x, delta.y)
 
 
 func _bench(parent: Node3D, position: Vector3, yaw: float) -> void:

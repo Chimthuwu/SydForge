@@ -10,6 +10,9 @@ const MAX_STREETLIGHTS := 6500
 const ACTIVE_STREETLIGHTS := 14
 const ACTIVE_LANDMARK_LIGHTS := 6
 const STREETLIGHT_RANGE := 30.0
+const LAMP_BEND_Y := 6.9
+const LAMP_HEAD_Y := 7.75
+const LAMP_REACH := 1.95
 ## AI cars are the largest source of dynamic lights at night. Rank the nearby
 ## cars and keep headlights on only for the closest few, so a busy street does
 ## not turn every windscreen into an extra spot light.
@@ -105,6 +108,10 @@ func _apply_lighting_factor(factor: float) -> void:
 		_cache_facade_materials()
 	for material in _facade_materials:
 		material.set_shader_parameter("night_factor", _lighting_factor)
+	for node in get_tree().get_nodes_in_group("night_glow"):
+		var glow := (node as MeshInstance3D).material_override as StandardMaterial3D
+		if glow != null:
+			glow.emission_energy_multiplier = float(node.get_meta("night_energy", 2.0)) * _lighting_factor
 	if _lamp_head_material != null:
 		_lamp_head_material.emission_energy_multiplier = _lighting_factor * 3.2
 	for index in _window_materials.size():
@@ -140,7 +147,7 @@ func _generate_streetlights() -> void:
 		return
 
 	var body_material := StandardMaterial3D.new()
-	body_material.albedo_color = Color("303940")
+	body_material.albedo_color = Color("4a545a")
 	body_material.metallic = 0.62
 	body_material.roughness = 0.52
 	var body_instance := _create_lamp_multimesh(
@@ -170,7 +177,7 @@ func _generate_streetlights() -> void:
 		spot.light_color = Color("ffe2bf")
 		spot.light_energy = 0.0
 		spot.shadow_enabled = false
-		spot.spot_attenuation = 1.35
+		spot.spot_attenuation = 0.8
 		spot.visible = false
 		add_child(spot)
 		street_spotlights.append(spot)
@@ -309,7 +316,7 @@ func _add_street_fixture(position: Vector3, aim: Vector3, priority: float) -> vo
 		"position": position,
 		"aim": flat_aim,
 		"priority": priority,
-		"energy": 4.4 if priority > 0.8 else 3.8,
+		"energy": 11.0 if priority > 0.8 else 9.0,
 		"range": STREETLIGHT_RANGE,
 	})
 
@@ -384,30 +391,65 @@ func _create_lamp_multimesh(node_name: String, mesh: ArrayMesh, material: Materi
 	return instance
 
 
+## Sydney-style steel street pole: footing collar, tapered shaft, a swept
+## outreach arm and a slim LED luminaire. +X points out over the road.
 func _make_lamp_body_mesh() -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var pole := CylinderMesh.new()
-	pole.top_radius = 0.045
-	pole.bottom_radius = 0.09
-	pole.height = 6.25
-	pole.radial_segments = 8
-	surface.append_from(pole, 0, Transform3D(Basis.IDENTITY, Vector3(0.0, 3.125, 0.0)))
-	var arm := BoxMesh.new()
-	arm.size = Vector3(1.3, 0.085, 0.085)
-	surface.append_from(arm, 0, Transform3D(Basis.IDENTITY, Vector3(0.56, 6.05, 0.0)))
-	var housing := BoxMesh.new()
-	housing.size = Vector3(0.55, 0.17, 0.29)
-	surface.append_from(housing, 0, Transform3D(Basis.IDENTITY, Vector3(1.17, 5.91, 0.0)))
+	_append_tube(surface, Vector3.ZERO, Vector3(0.0, 0.18, 0.0), 0.24, 0.22)
+	_append_tube(surface, Vector3(0.0, 0.18, 0.0), Vector3(0.0, 1.15, 0.0), 0.165, 0.145)
+	_append_tube(surface, Vector3(0.0, 1.15, 0.0), Vector3(0.0, 1.24, 0.0), 0.175, 0.175)
+	_append_tube(surface, Vector3(0.0, 1.24, 0.0), Vector3(0.0, LAMP_BEND_Y, 0.0), 0.15, 0.115)
+	# Quadratic sweep from the top of the shaft out to the luminaire.
+	var start := Vector3(0.0, LAMP_BEND_Y, 0.0)
+	var control := Vector3(0.0, LAMP_HEAD_Y + 0.42, 0.0)
+	var finish := Vector3(LAMP_REACH - 0.42, LAMP_HEAD_Y + 0.12, 0.0)
+	var previous := start
+	for step in range(1, 9):
+		var t := float(step) / 8.0
+		var point := start.lerp(control, t).lerp(control.lerp(finish, t), t)
+		_append_tube(surface, previous, point, lerpf(0.115, 0.07, t - 0.125), lerpf(0.115, 0.07, t))
+		previous = point
+	# Luminaire: a flattened, rounded shell that tapers towards the arm.
+	var shell := SphereMesh.new()
+	shell.radius = 0.5
+	shell.height = 1.0
+	shell.radial_segments = 14
+	shell.rings = 7
+	surface.append_from(shell, 0, Transform3D(
+		Basis.from_scale(Vector3(0.98, 0.2, 0.42)),
+		Vector3(LAMP_REACH, LAMP_HEAD_Y + 0.07, 0.0)))
+	# Finial cap where the arm leaves the shaft.
+	_append_tube(surface, Vector3(0.0, LAMP_BEND_Y - 0.06, 0.0), Vector3(0.0, LAMP_BEND_Y + 0.12, 0.0), 0.11, 0.055)
 	return surface.commit()
+
+
+func _append_tube(surface: SurfaceTool, from: Vector3, to: Vector3, from_radius: float, to_radius: float) -> void:
+	var delta := to - from
+	var tube := CylinderMesh.new()
+	tube.bottom_radius = from_radius
+	tube.top_radius = to_radius
+	tube.height = delta.length()
+	tube.radial_segments = 10
+	tube.rings = 0
+	var basis := Basis.IDENTITY
+	var up := delta.normalized()
+	if absf(up.dot(Vector3.UP)) < 0.9999:
+		basis = Basis(Quaternion(Vector3.UP, up))
+	surface.append_from(tube, 0, Transform3D(basis, (from + to) * 0.5))
 
 
 func _make_lamp_head_mesh() -> ArrayMesh:
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var lens := BoxMesh.new()
-	lens.size = Vector3(0.38, 0.045, 0.21)
-	surface.append_from(lens, 0, Transform3D(Basis.IDENTITY, Vector3(1.17, 5.81, 0.0)))
+	var lens := SphereMesh.new()
+	lens.radius = 0.5
+	lens.height = 1.0
+	lens.radial_segments = 14
+	lens.rings = 7
+	surface.append_from(lens, 0, Transform3D(
+		Basis.from_scale(Vector3(0.62, 0.1, 0.3)),
+		Vector3(LAMP_REACH + 0.06, LAMP_HEAD_Y - 0.02, 0.0)))
 	return surface.commit()
 
 
@@ -448,7 +490,7 @@ func _select_nearby_streetlights() -> void:
 		var record: Dictionary = candidates[index]
 		var position: Vector3 = record["position"]
 		var aim: Vector3 = record["aim"]
-		var head_position := position + Vector3.UP * 5.83 + aim * 1.16
+		var head_position := position + Vector3.UP * (LAMP_HEAD_Y - 0.1) + aim * LAMP_REACH
 		light.global_position = head_position
 		light.look_at(position + aim * 4.0 + Vector3.UP * 0.1, Vector3.UP)
 		light.spot_range = float(record["range"])

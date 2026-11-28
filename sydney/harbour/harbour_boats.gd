@@ -27,24 +27,77 @@ func setup(player: Node3D) -> void:
 
 func _spawn_all() -> void:
 	_add_boat(BoatKind.FERRY, [
-		Vector3(-60.0, 0.0, -1410.0), Vector3(115.0, 0.0, -1540.0),
-		Vector3(340.0, 0.0, -1705.0), Vector3(620.0, 0.0, -1745.0),
+		Vector3(168.0, 0.0, -1400.0),
+		Vector3(576.0, 0.0, -1792.0),
 	], 9.0)
 	_add_boat(BoatKind.FERRY, [
-		Vector3(640.0, 0.0, -1695.0), Vector3(380.0, 0.0, -1600.0),
-		Vector3(90.0, 0.0, -1450.0), Vector3(-220.0, 0.0, -1290.0),
+		Vector3(712.0, 0.0, -1688.0),
+		Vector3(720.0, 0.0, -1696.0),
+		Vector3(752.0, 0.0, -1800.0),
+		Vector3(752.0, 0.0, -1832.0),
+		Vector3(744.0, 0.0, -1856.0),
+		Vector3(712.0, 0.0, -1888.0),
+		Vector3(72.0, 0.0, -2168.0),
+		Vector3(16.0, 0.0, -2176.0),
+		Vector3(-128.0, 0.0, -2160.0),
+		Vector3(-688.0, 0.0, -1960.0),
+		Vector3(-720.0, 0.0, -1928.0),
+		Vector3(-728.0, 0.0, -1920.0),
+		Vector3(-736.0, 0.0, -1896.0),
+		Vector3(-752.0, 0.0, -1696.0),
+		Vector3(-744.0, 0.0, -1624.0),
+		Vector3(-736.0, 0.0, -1600.0),
+		Vector3(-720.0, 0.0, -1584.0),
+		Vector3(-648.0, 0.0, -1544.0),
+		Vector3(-608.0, 0.0, -1544.0),
+		Vector3(-576.0, 0.0, -1560.0),
 	], 8.2)
 	_add_boat(BoatKind.SMALL_CRAFT, [
-		Vector3(220.0, 0.0, -1870.0), Vector3(360.0, 0.0, -1830.0),
-		Vector3(520.0, 0.0, -1770.0), Vector3(650.0, 0.0, -1700.0),
+		Vector3(224.0, 0.0, -1872.0),
+		Vector3(688.0, 0.0, -1896.0),
+		Vector3(712.0, 0.0, -1888.0),
+		Vector3(744.0, 0.0, -1856.0),
+		Vector3(752.0, 0.0, -1816.0),
+		Vector3(744.0, 0.0, -1752.0),
+		Vector3(720.0, 0.0, -1696.0),
+		Vector3(712.0, 0.0, -1688.0),
 	], 6.5)
 	_add_boat(BoatKind.SMALL_CRAFT, [
-		Vector3(-360.0, 0.0, -650.0), Vector3(-230.0, 0.0, -830.0),
-		Vector3(-90.0, 0.0, -1040.0), Vector3(40.0, 0.0, -1250.0),
+		Vector3(-624.0, 0.0, -520.0),
+		Vector3(-632.0, 0.0, -528.0),
+		Vector3(-712.0, 0.0, -1024.0),
+		Vector3(-752.0, 0.0, -1736.0),
+		Vector3(-736.0, 0.0, -1904.0),
+		Vector3(-728.0, 0.0, -1920.0),
+		Vector3(-696.0, 0.0, -1952.0),
+		Vector3(-688.0, 0.0, -1960.0),
+		Vector3(-128.0, 0.0, -2160.0),
+		Vector3(40.0, 0.0, -2176.0),
+		Vector3(88.0, 0.0, -2160.0),
+		Vector3(160.0, 0.0, -2112.0),
+		Vector3(200.0, 0.0, -2072.0),
+		Vector3(264.0, 0.0, -1952.0),
+		Vector3(232.0, 0.0, -1424.0),
+		Vector3(176.0, 0.0, -1392.0),
+		Vector3(168.0, 0.0, -1384.0),
 	], 7.4)
 	_add_boat(BoatKind.TUG, [
-		Vector3(-620.0, 0.0, -1160.0), Vector3(-400.0, 0.0, -1320.0),
-		Vector3(-140.0, 0.0, -1510.0), Vector3(160.0, 0.0, -1660.0),
+		Vector3(-696.0, 0.0, -1136.0),
+		Vector3(-704.0, 0.0, -1144.0),
+		Vector3(-752.0, 0.0, -1736.0),
+		Vector3(-736.0, 0.0, -1904.0),
+		Vector3(-728.0, 0.0, -1920.0),
+		Vector3(-696.0, 0.0, -1952.0),
+		Vector3(-688.0, 0.0, -1960.0),
+		Vector3(-104.0, 0.0, -2168.0),
+		Vector3(40.0, 0.0, -2176.0),
+		Vector3(88.0, 0.0, -2160.0),
+		Vector3(160.0, 0.0, -2112.0),
+		Vector3(200.0, 0.0, -2072.0),
+		Vector3(264.0, 0.0, -1952.0),
+		Vector3(248.0, 0.0, -1640.0),
+		Vector3(232.0, 0.0, -1608.0),
+		Vector3(224.0, 0.0, -1600.0),
 	], 5.6)
 
 
@@ -127,7 +180,13 @@ func _process(delta: float) -> void:
 		var distance := direction.length()
 		var move: float = boat["speed"] * delta
 		if distance <= move + 0.5:
-			boat["index"] = (target_index + 1) % points.size()
+			# Out and back along the surveyed channel. Wrapping from the last
+			# point to the first drew a straight line across the shore.
+			var heading: int = boat.get("heading", 1)
+			if target_index + heading < 0 or target_index + heading >= points.size():
+				heading = -heading
+				boat["heading"] = heading
+			boat["index"] = target_index + heading
 			root.global_position = target
 		else:
 			root.global_position += direction.normalized() * move

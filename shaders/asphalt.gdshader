@@ -22,6 +22,12 @@ void vertex() {
 }
 
 void fragment() {
+	// The ribbons are wound facing down and drawn double-sided, so Godot flips
+	// their normal when seen from above. Flip it back, or no light from above
+	// (streetlights, headlights, the sun) ever reaches the road.
+	if (!FRONT_FACING) {
+		NORMAL = -NORMAL;
+	}
 	float aggregate = hash21(floor(world_position.xz * 6.0));
 	float fine = hash21(floor(world_position.xz * 22.0));
 	float patch = hash21(floor(world_position.xz * 0.09));

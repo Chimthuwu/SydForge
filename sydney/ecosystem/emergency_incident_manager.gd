@@ -29,7 +29,14 @@ const INCIDENT_NAMES := [
 @export var max_active_incidents: int = 1
 @export var incident_check_interval: float = 75.0
 
+## Backup officers never appear at the scene out of thin air: they turn up after
+## a delay, away from both the scene and the player.
+const BACKUP_DELAY_S := 25.0
+const BACKUP_MIN_RANGE := 45.0
+const BACKUP_MAX_RANGE := 65.0
+
 var active_incidents: Array[Dictionary] = []
+var _pending_backup: Dictionary = {}
 var player_ref: Node3D
 var sydney_world: SydneyWorld
 var foot_patrol_officers: Array[Node3D] = []
@@ -59,7 +66,37 @@ func request_police_response(position: Vector3, severity: float = 1.0) -> void:
 	var traffic_mgrs := get_tree().get_nodes_in_group("traffic_managers")
 	if not traffic_mgrs.is_empty() and traffic_mgrs[0].has_method("request_emergency_response"):
 		traffic_mgrs[0].call("request_emergency_response", position, "police")
-	_spawn_foot_officers_near(position, 1 if severity < 1.5 else 2)
+	# One backup call can be outstanding at a time, so repeated reports (every
+	# shot, every kill) neither stack officers nor restart the clock.
+	if _pending_backup.is_empty():
+		_pending_backup = {
+			"position": position, "count": 1 if severity < 1.5 else 2,
+			"delay": BACKUP_DELAY_S,
+		}
+
+
+## Somewhere on the ring around the scene that is not right next to the player.
+func _backup_spot(scene_position: Vector3) -> Vector3:
+	var spot := scene_position
+	for attempt in 8:
+		var angle := randf() * TAU
+		spot = scene_position + Vector3(cos(angle), 0.0, sin(angle)) \
+			* randf_range(BACKUP_MIN_RANGE, BACKUP_MAX_RANGE)
+		if player_ref == null or spot.distance_to(player_ref.global_position) >= BACKUP_MIN_RANGE:
+			break
+	spot.y = 0.2
+	return spot
+
+
+func _tick_backup(delta: float) -> void:
+	if _pending_backup.is_empty():
+		return
+	_pending_backup["delay"] = float(_pending_backup["delay"]) - delta
+	if float(_pending_backup["delay"]) > 0.0:
+		return
+	_spawn_foot_officers_near(
+		_backup_spot(_pending_backup["position"]), int(_pending_backup["count"]))
+	_pending_backup = {}
 
 
 func set_patrol_intensity(value: float) -> void:
@@ -106,6 +143,7 @@ func _spawn_foot_officers_near(position: Vector3, count: int) -> void:
 func _process(delta: float) -> void:
 	if player_ref == null:
 		return
+	_tick_backup(delta)
 
 	_timer -= delta
 	if _timer <= 0.0:

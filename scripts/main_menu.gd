@@ -39,16 +39,24 @@ const TEXT_DIM := Color("9fb0b3")
 const MODE_OPTIONS := [
 	{"id": "free_roam", "label": "FREE ROAM", "hint": "Explore the city at your own pace"},
 	{"id": "street_race", "label": "STREET RACE", "hint": "Drop into a car and race an AI rival straight away"},
-	{"id": "multiplayer_host", "label": "HOST MULTIPLAYER", "hint": "Open a deathmatch server on port 7777"},
-	{"id": "multiplayer_join", "label": "JOIN MULTIPLAYER", "hint": "Join a deathmatch (localhost)"},
+	{"id": "multiplayer_host", "label": "HOST MULTIPLAYER", "hint": "Start a deathmatch room; friends use the same room code"},
+	{"id": "multiplayer_join", "label": "JOIN MULTIPLAYER", "hint": "Join the room code below"},
 ]
 
 var _hours := 12.5
 var _spawn_id := "bridge"
 var _mode := "free_roam"
+## Multiplayer room code. Read by the district on start.
+var room_code := "lobby"
 
 
 func _ready() -> void:
+	if OS.has_feature("web"):
+		var invited: Variant = JavaScriptBridge.eval(
+			"new URLSearchParams(window.location.search).get('room')", true)
+		if invited is String and not (invited as String).is_empty():
+			room_code = NetworkManager.clean_room(invited)
+			_mode = "multiplayer_join"
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	layer = 80
 	_build()
@@ -154,6 +162,16 @@ func _build() -> void:
 		button.pressed.connect(_select_mode.bind(str(option["id"])))
 		if str(option["id"]) == _mode:
 			button.button_pressed = true
+
+	var room := LineEdit.new()
+	room.name = "RoomCode"
+	room.text = room_code
+	room.placeholder_text = "Room code (same for all friends)"
+	room.tooltip_text = "Multiplayer room. Everyone types the same code."
+	room.max_length = 24
+	room.custom_minimum_size = Vector2(300.0, 36.0)
+	room.text_changed.connect(func(value: String) -> void: room_code = value.strip_edges())
+	mode_column.add_child(room)
 
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 16)

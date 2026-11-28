@@ -313,6 +313,8 @@ func _load_roads_cache() -> RoadMeshCacheData:
 
 
 func _save_roads_cache(cache: RoadMeshCacheData) -> void:
+	if OS.has_feature("web"):
+		return  # browser storage cannot hold the caches
 	DirAccess.make_dir_recursive_absolute("user://cache")
 	var err := ResourceSaver.save(cache, _roads_cache_path())
 	if err != OK:
@@ -522,6 +524,8 @@ func _load_buildings_cache() -> BuildingMeshCacheData:
 
 
 func _save_buildings_cache(cache: BuildingMeshCacheData) -> void:
+	if OS.has_feature("web"):
+		return  # browser storage cannot hold the caches
 	DirAccess.make_dir_recursive_absolute("user://cache")
 	var err := ResourceSaver.save(cache, _buildings_cache_path())
 	if err != OK:

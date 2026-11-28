@@ -287,6 +287,7 @@ func _on_menu_start(hours: float, spawn_id: String, mode: String = "free_roam") 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	var menu := get_node_or_null("MainMenu")
 	if menu != null:
+		room_code = NetworkManager.clean_room(str(menu.get("room_code")))
 		menu.queue_free()
 	var time_mgr := get_node_or_null("WorldTimeManager")
 	if time_mgr != null:
@@ -300,7 +301,7 @@ func _on_menu_start(hours: float, spawn_id: String, mode: String = "free_roam") 
 
 
 ## Menu mode handling. STREET RACE seats the player in a car and starts the
-## rival race; the multiplayer modes open (or join) the ENet deathmatch
+## rival race; the multiplayer modes enter the relay deathmatch room
 ## session, so neither feature needs a hidden hotkey.
 func _apply_menu_mode(mode: String) -> void:
 	match mode:
@@ -308,10 +309,10 @@ func _apply_menu_mode(mode: String) -> void:
 			_start_menu_race()
 		"multiplayer_host":
 			if deathmatch_manager != null:
-				message = "DEATHMATCH · %s" % deathmatch_manager.host()
+				message = "DEATHMATCH · %s" % deathmatch_manager.host(room_code)
 		"multiplayer_join":
 			if deathmatch_manager != null:
-				message = "DEATHMATCH · %s" % deathmatch_manager.join("127.0.0.1")
+				message = "DEATHMATCH · %s" % deathmatch_manager.join(room_code)
 
 
 ## The main menu's STREET RACE mode: seat the player in the closest enterable

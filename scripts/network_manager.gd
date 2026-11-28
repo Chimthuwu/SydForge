@@ -1,93 +1,97 @@
 class_name NetworkManager
 extends Node
 
-## Minimal ENet session management for deathmatch. Deliberately thin: no
-## matchmaking/relay yet (see SkyJump3D's WebSocket relay for where that goes
-## later) — host_game()/join_game() are direct-IP/LAN/Tailscale for now.
+## Room-based multiplayer through a WebSocket relay (cloudflare/worker.js), the
+## same method SKYJUMP3D uses. Everyone who connects with the same room code is
+## in the same game: no IP addresses or port forwarding, and it works in a
+## browser. The relay only passes JSON between players.
 
 signal player_joined(peer_id: int)
 signal player_left(peer_id: int)
 signal network_ready(peer_id: int)
 signal connection_failed_signal
+signal message_received(message: Dictionary)
 
-const DEFAULT_PORT := 7777
-const MAX_PLAYERS := 8
+const RELAY_URL := "wss://syd-forge-relay.nyan-anonymous-d45.workers.dev"
 
 var active: bool = false
+var room := ""
+var _socket: WebSocketPeer
+var _id := 0
 
 
-func host_game(port: int = DEFAULT_PORT) -> String:
+func _ready() -> void:
+	# The connection must stay serviced while the pause menu is open.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
+
+## Room codes keep only the characters the relay accepts.
+static func clean_room(code: String) -> String:
+	var result := ""
+	for character in code.strip_edges().to_lower():
+		if character in "abcdefghijklmnopqrstuvwxyz0123456789_-":
+			result += character
+	return result.left(24) if not result.is_empty() else "lobby"
+
+
+func join_room(code: String) -> String:
 	stop()
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_server(port, MAX_PLAYERS)
-	if err != OK:
-		return "Failed to host on port %d (error %d)" % [port, err]
-	multiplayer.multiplayer_peer = peer
+	room = clean_room(code)
+	var base := OS.get_environment("SYDFORGE_RELAY")
+	if base.is_empty():
+		base = RELAY_URL
+	_socket = WebSocketPeer.new()
+	var error := _socket.connect_to_url("%s/ws?room=%s" % [base, room])
+	if error != OK:
+		_socket = null
+		return "Could not connect (error %d)" % error
 	active = true
-	_connect_signals()
-	player_joined.emit(multiplayer.get_unique_id())
-	return "Hosting on port %d · your id %d" % [port, multiplayer.get_unique_id()]
-
-
-func join_game(address: String, port: int = DEFAULT_PORT) -> String:
-	stop()
-	var peer := ENetMultiplayerPeer.new()
-	var err := peer.create_client(address, port)
-	if err != OK:
-		return "Failed to connect to %s:%d (error %d)" % [address, port, err]
-	multiplayer.multiplayer_peer = peer
-	active = true
-	_connect_signals()
-	return "Connecting to %s:%d..." % [address, port]
+	return "Joining room '%s'..." % room
 
 
 func stop() -> void:
-	if active:
-		_disconnect_signals()
-	if multiplayer.multiplayer_peer != null:
-		multiplayer.multiplayer_peer.close()
-	multiplayer.multiplayer_peer = null
+	if _socket != null:
+		_socket.close()
+	_socket = null
 	active = false
-
-
-func is_host() -> bool:
-	return active and multiplayer.has_multiplayer_peer() and multiplayer.is_server()
+	_id = 0
 
 
 func local_id() -> int:
-	return multiplayer.get_unique_id()
+	return _id
 
 
-func _connect_signals() -> void:
-	multiplayer.peer_connected.connect(_on_peer_connected)
-	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
-	multiplayer.connected_to_server.connect(_on_connected_to_server)
-	multiplayer.connection_failed.connect(_on_connection_failed)
+func send(message: Dictionary) -> void:
+	if _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		_socket.send_text(JSON.stringify(message))
 
 
-func _disconnect_signals() -> void:
-	if multiplayer.peer_connected.is_connected(_on_peer_connected):
-		multiplayer.peer_connected.disconnect(_on_peer_connected)
-	if multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
-		multiplayer.peer_disconnected.disconnect(_on_peer_disconnected)
-	if multiplayer.connected_to_server.is_connected(_on_connected_to_server):
-		multiplayer.connected_to_server.disconnect(_on_connected_to_server)
-	if multiplayer.connection_failed.is_connected(_on_connection_failed):
-		multiplayer.connection_failed.disconnect(_on_connection_failed)
+func _process(_delta: float) -> void:
+	if _socket == null:
+		return
+	_socket.poll()
+	while _socket != null and _socket.get_available_packet_count() > 0:
+		var parsed: Variant = JSON.parse_string(_socket.get_packet().get_string_from_utf8())
+		if typeof(parsed) == TYPE_DICTIONARY:
+			_handle(parsed)
+	if _socket != null and _socket.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+		stop()
+		connection_failed_signal.emit()
 
 
-func _on_peer_connected(id: int) -> void:
-	player_joined.emit(id)
-
-
-func _on_peer_disconnected(id: int) -> void:
-	player_left.emit(id)
-
-
-func _on_connected_to_server() -> void:
-	network_ready.emit(multiplayer.get_unique_id())
-
-
-func _on_connection_failed() -> void:
-	active = false
-	connection_failed_signal.emit()
+func _handle(message: Dictionary) -> void:
+	match str(message.get("t", "")):
+		"hi":
+			_id = int(message.get("id", 0))
+			network_ready.emit(_id)
+			for peer in message.get("peers", []):
+				player_joined.emit(int(peer))
+		"join":
+			player_joined.emit(int(message.get("id", 0)))
+		"leave":
+			player_left.emit(int(message.get("id", 0)))
+		"full":
+			stop()
+			connection_failed_signal.emit()
+		_:
+			message_received.emit(message)

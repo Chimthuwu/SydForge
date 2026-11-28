@@ -110,16 +110,19 @@
 
 ## Owner bug report (2026-11-27)
 
-- [ ] **Harbour Bridge trains still sink into the ground and clip through the road.** [P1] [bugs] [size:L]
+- [x] **Harbour Bridge trains still sink into the ground and clip through the road.** [P1] [bugs] [size:L]
+  - 2026-11-27: covered above-ground tunnel from a stone arch a quarter of the way up the bridge into an underground bore. `tests/harbour_tunnel_test.gd` 7/0. Owner live check still welcome.
   Why: owner playtest; the rail on the bridge approach still goes into the road surface.
   Done when: a real train tunnel runs underground from Wynyard to the very start of the Harbour Bridge, trains stay inside it, and no train is visible passing through the road.
   Hints: the existing rail cutting/descent work (`cbd_rail_network.gd`, `StationInteriors.descent_cut_path()`) is the starting point; the bridge-approach section still needs its own tunnel bore.
 
-- [ ] **Milsons Point station is a floating mesh and cannot be reached.** [P1] [bugs] [size:M]
+- [!] **Milsons Point station is a floating mesh and cannot be reached.** [P1] [bugs] [size:M]
+  - 2026-11-27: grounded brick viaduct, two stair flights with collision and a street entrance (`sydney/landmarks/milsons_point.gd`); floating ticket room removed. Compile-checked only: nobody has walked it.
   Why: owner playtest; station geometry sits in the air with no access.
   Done when: the station sits on real ground or a platform with a walkable entrance, and the player can reach it on foot.
 
-- [ ] **Milsons Point needs building out, including Luna Park.** [P2] [content] [size:L]
+- [!] **Milsons Point needs building out, including Luna Park.** [P2] [content] [size:L]
+  - 2026-11-27: low-rise blocks along the mapped streets plus a Luna Park funfair (entrance, towers, ferris wheel, carousel, stalls). Entrance face is an original design; the LUNA PARK name still needs the owner's licence call. Compile-checked only, not seen on screen.
   Why: the area is currently empty; owner wants Luna Park present.
   Done when: Milsons Point has authored streets and buildings and a recognisable Luna Park landmark at its real site.
   Hints: Luna Park is a real landmark and needs a licence/attribution check before any exact-likeness modelling.
@@ -133,17 +136,31 @@
   Done when: owner picks the priority landmarks and a before/after capture shows each one with a recognisable silhouette and placement.
   Hints: builds on the existing anchor and landmark work in the "Visual direction / world quality" section.
 
+### Reported during the 2026-11-27 session
+
+- [x] **A new cop spawns the instant one is killed.** Backup now arrives after ~25 s, 45 m+ from the scene and player. `tests/police_backup_test.gd` 4/0.
+- [x] **Hyde Park: forest of trees, trees on paths, benches on Park Street.** Rebuilt from one shared layout; `tests/hyde_park_test.gd` 5/0. Northern walks are authored (not in the map export); some grey patches remain from the air.
+- [x] **Thin building slab between the two halves of Hyde Park.** Removed; confirmed gone in an aerial capture.
+- [x] **Ferries sailing over land.** Routes follow the water outlines and run out-and-back. `tests/harbour_boats_test.gd` 1/0.
+- [!] **City streetlights look bad.** New tapered pole, curved arm and slim head; seen in a capture. Poles were thickened and re-captured. Owner taste check open.
+- [!] **Esc shows only "click to resume".** Not reproduced: Esc opens/closes the menu in a normal launch. Likely a leftover automated-test window, where menus are disabled. Reopen if it happens from the desktop shortcut.
+- [ ] `tests/harbour_bridge_test.gd` has a winding-check failure and a `sydney_bridge_district.gd:24` out-of-bounds error that also happen on commit 618063a.
+- [ ] Parts of the western CBD streets lie inside the harbour water outline (blue ground beside footpaths).
+
 ## Inbox (agent-proposed)
 
-- [ ] **Headlight spots never illuminate the road surface at night** [P1] [bugs] [size:M]
+- [x] **Headlight spots never illuminate the road surface at night** [P1] [bugs] [size:M]
+  - 2026-11-27: root cause: road ribbons are wound downward and drawn double-sided, so they were lit as if facing the ground (fixed in `shaders/asphalt.gdshader`); street meshes are also tiled (`mesh_tiler.gd`) and light limits raised. Streetlight pool confirmed on a city road, and a headlight pool ahead of a parked car on the bridge deck, in 22:00 captures.
   Why: capture evidence in `docs/L89_VISUAL_CAPTURES_2026-11-26.md` — SpotLight3Ds toggle visible (logic tests 32/0) but no light pool reaches the road from any angle; suspected max-lights-per-mesh limit in gl_compatibility because roads/footpaths are single whole-city merged meshes whose AABB sees all 126 night lights.
   Done when: a rear-beam capture (`tests/capture_l89_visuals.gd`) shows a light pool on the asphalt ahead of a parked car at 22:00.
   Hints: tile the merged road/footpath meshes so lights cull per tile — same refactor as the perf audit's P2 draw-call item; alternatively test whether `rendering/limits/opengl/max_lights_per_object` trade-offs help first.
-- [ ] **Night storefront signs have no glow or light spill** [P3] [ui/cosmetic] [size:S]
+- [!] **Night storefront signs have no glow or light spill** [P3] [ui/cosmetic] [size:S]
+  - 2026-11-27: brand-colour lightbox strip under each fascia, brightening at night. No pavement light spill. Not seen on screen.
   Why: vision pass on `storefront_mcdonalds_night_posz.png` — lettering is high-contrast albedo but casts nothing, so signs read flat at night.
   Done when: a night capture shows emissive glow (or a small light on the pavement) for at least the major chains.
   Hints: raise the `_material` emission energy on `BrandSign` at night via the existing emissive path in `cbd_businesses.gd`.
 - [ ] **Storefronts read undersized against CBD towers** [P3] [ui/cosmetic] [size:M]
+  - 2026-11-28: owner decision: Woolworths and Coles should be quite big. Both are now two-storey frontages (Woolworths 28.6 m, Coles 36 m), `tests/supermarket_size_test.gd` passes; not yet seen on screen. The Big W shopfront on the same wall was removed to make room. Open: sizes for other chains; only 1 of 16 mapped Woolworths and 1 of 7 mapped Coles are built.
   Why: the McDonald's capture shows a correctly seated but comically small single-storey shop against a 30-floor facade; hurts street believability.
   Done when: owner picks target scale for chain storefronts (2-storey podium or wider frontage) and a before/after capture matches it.
   Hints: `_desired_width()`/`_build_storefront()` in `sydney/cbd/cbd_businesses.gd`; needs an owner scale decision before work.
@@ -151,4 +168,4 @@
 ## Menu audit (2026-11-27)
 - [x] Audited menu system. Street racing accessible in-game (Y while in a car, `race_manager.gd`); multiplayer accessible (F6 host / F7 join on 127.0.0.1 / F10 scoreboard, ENet `network_manager.gd` + `deathmatch_manager.gd`). Exit was missing → added QUIT button to main menu and QUIT GAME to pause menu; footer hint now lists the race/multiplayer keys. Regression: `tests/lighting_pause_test.gd` 18/0. Committed 32506d7, pushed to origin/main.
 - [x] Follow-up (user feedback): race + multiplayer are now main-menu MODE options — STREET RACE (auto-seats the player in the nearest car and starts the AI rival race), HOST MULTIPLAYER (port 7777), JOIN MULTIPLAYER (localhost). Y / F6 / F7 remain as in-game shortcuts. New `tests/main_menu_test.gd` 7/0.
-- [ ] Known limitation: multiplayer join still targets 127.0.0.1 — LAN/Tailscale play needs an address prompt in the menu.
+- [!] Menu now has a host address box under MODE (used by JOIN MULTIPLAYER and F7). Compile-checked only; not tried across two machines.

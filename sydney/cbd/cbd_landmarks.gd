@@ -303,46 +303,6 @@ func _build_st_marys_cathedral(world_data: Dictionary) -> void:
 			ArtUtil.box(group, Vector3(x + side * 2.2, 15.5, z), Vector3(0.18, 7.0, 1.3), WINDOW)
 
 
-func _build_hyde_park(_world_data: Dictionary) -> void:
-	var group := _group("HydeParkLandmarks")
-	ArtUtil.box(group, Vector3(332.0, 0.08, -195.0), Vector3(18.0, 0.12, 260.0), Color("c6b99f"))
-	var fountain_group := Node3D.new()
-	fountain_group.name = "ArchibaldFountain"
-	group.add_child(fountain_group)
-
-	# Archibald Fountain: concentric stone basins, turquoise water and a central
-	# sculptural plinth. It sits within the north end of the southern park panel.
-	var fountain := Vector3(332.0, 0.08, -178.0)
-	ArtUtil.cylinder(fountain_group, fountain + Vector3.UP * 0.55, 11.0, 1.1, STONE)
-	ArtUtil.cylinder(fountain_group, fountain + Vector3.UP * 1.15, 8.8, 0.38, STONE_LIGHT, 7.6)
-	ArtUtil.cylinder(fountain_group, fountain + Vector3.UP * 1.38, 6.8, 0.16, WATER)
-	ArtUtil.cylinder(fountain_group, fountain + Vector3.UP * 2.2, 1.9, 1.7, STONE_DARK, 1.2)
-	ArtUtil.sphere(fountain_group, fountain + Vector3.UP * 3.45, 1.05, STONE_LIGHT)
-	for angle in range(0, 360, 90):
-		var offset := Vector3(5.2, 1.8, 0.0).rotated(Vector3.UP, deg_to_rad(float(angle)))
-		ArtUtil.cylinder(fountain_group, fountain + offset, 0.55, 2.8, STONE_LIGHT, 0.24)
-
-	# Hyde Park Obelisk and the southern Anzac Memorial/pool create a strong
-	# north-south civic axis through the existing OSM park surfaces.
-	var obelisk_group := Node3D.new()
-	obelisk_group.name = "HydeParkObelisk"
-	group.add_child(obelisk_group)
-	var obelisk := ArtUtil.tapered_box(
-		obelisk_group, Vector3(270.0, 10.0, -300.0), Vector3(2.4, 20.0, 2.4),
-		Vector2(0.25, 0.25), STONE_LIGHT
-	)
-	ArtUtil.box(obelisk_group, Vector3(270.0, 0.55, -300.0), Vector3(8.0, 1.1, 8.0), STONE)
-	obelisk.name = "HydeParkObelisk"
-	var memorial_group := Node3D.new()
-	memorial_group.name = "AnzacMemorial"
-	group.add_child(memorial_group)
-	ArtUtil.box(memorial_group, Vector3(300.0, 0.12, 342.0), Vector3(34.0, 0.24, 22.0), WATER)
-	ArtUtil.box(memorial_group, Vector3(300.0, 4.5, 342.0), Vector3(16.0, 9.0, 14.0), STONE_LIGHT)
-	ArtUtil.box(memorial_group, Vector3(300.0, 10.0, 342.0), Vector3(20.0, 2.0, 18.0), STONE)
-	ArtUtil.cylinder(memorial_group, Vector3(300.0, 17.0, 342.0), 8.0, 12.0, STONE, 3.5)
-	ArtUtil.sphere(memorial_group, Vector3(300.0, 23.0, 342.0), 4.0, STONE_LIGHT)
-
-
 func _build_central_station(world_data: Dictionary) -> void:
 	var group := _group("CentralStationLandmark")
 	var clock := Vector2(-187.6, 1034.1)

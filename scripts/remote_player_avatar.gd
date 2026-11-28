@@ -50,7 +50,7 @@ func _physics_process(dt: float) -> void:
 func take_damage(amount: float) -> void:
 	if manager == null or health <= 0.0:
 		return
-	manager.request_damage(owner_peer_id, amount, multiplayer.get_unique_id())
+	manager.request_damage(owner_peer_id, amount, manager.network.local_id())
 
 
 func take_damage_at(amount: float, _impact_position: Vector3, _impact_intensity: float, _shot_direction: Vector3) -> void:

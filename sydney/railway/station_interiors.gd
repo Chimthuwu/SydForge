@@ -88,37 +88,18 @@ const STATIONS := [
 var stats: Dictionary = {}
 
 
-## Plan of the southern open rail cutting, sampled every second route index
-## between the descent start and the first enclosed bore segment. The cut
-## curves ~52 m across XZ, so axis-aligned rectangles either miss the ends or
-## open a crater far wider than the trench (a 16 m square rotated 45° covers
-## more than 22 m across the track). CbdWorld therefore cuts the ground with
-## this centreline instead of subtracting squares from the slab.
+## Plan of the short open ramp at the southern end of the Harbour Bridge, where
+## the track dives into the covered Wynyard bore (route indices 227..240). The
+## ramp curves across XZ, so CbdWorld cuts the ground with this centreline
+## instead of subtracting axis-aligned squares from the slab.
 const DESCENT_CUT_POINTS := [
-	# From the portal where the route leaves street grade (index 248) so the
-	# ground opening starts with the dive instead of burying 40 m of train.
-	Vector2(-195.67, -1443.25), Vector2(-199.04, -1429.25),
-	Vector2(-201.88, -1418.08), Vector2(-204.80, -1408.38),
-	Vector2(-206.56, -1402.84), Vector2(-210.14, -1392.09),
-	Vector2(-213.79, -1381.65), Vector2(-218.54, -1369.02),
-	Vector2(-223.28, -1356.38), Vector2(-228.03, -1343.75),
-	Vector2(-232.63, -1331.29), Vector2(-236.79, -1319.22),
-	Vector2(-240.53, -1307.55), Vector2(-244.08, -1294.49),
-	Vector2(-247.37, -1281.15), Vector2(-249.89, -1268.91),
-	Vector2(-252.01, -1257.32), Vector2(-253.72, -1246.36),
-	Vector2(-255.78, -1231.93), Vector2(-257.02, -1220.69),
-	Vector2(-257.85, -1206.17), Vector2(-258.14, -1193.24),
-	Vector2(-258.18, -1181.09), Vector2(-257.76, -1167.91),
-	Vector2(-256.86, -1152.05), Vector2(-255.05, -1137.48),
-	Vector2(-253.23, -1122.92), Vector2(-251.67, -1112.48),
-	Vector2(-249.72, -1102.05), Vector2(-247.43, -1089.77),
-	Vector2(-245.15, -1077.49), Vector2(-243.35, -1063.80),
-	Vector2(-241.69, -1049.08), Vector2(-240.16, -1033.34),
-	Vector2(-238.63, -1017.60), Vector2(-237.22, -1003.29),
-	Vector2(-235.92, -990.41), Vector2(-234.69, -978.39),
-	Vector2(-233.54, -967.22), Vector2(-232.06, -954.41),
-	# The route's next point is the first enclosed bore segment (z = -948.01).
-	Vector2(-231.32, -948.01),
+	Vector2(-152.24, -1562.58), Vector2(-155.16, -1556.74),
+	Vector2(-157.58, -1551.77), Vector2(-160.01, -1546.80),
+	Vector2(-162.43, -1541.83), Vector2(-164.63, -1536.82),
+	Vector2(-166.83, -1531.81), Vector2(-169.03, -1526.80),
+	Vector2(-171.04, -1521.74), Vector2(-173.04, -1516.67),
+	Vector2(-175.05, -1511.61), Vector2(-177.51, -1505.42),
+	Vector2(-179.31, -1500.31), Vector2(-181.12, -1495.21),
 ]
 ## Ground opening half-width. The cutting's retaining walls stand 6.4 m either
 ## side of the centreline and are 0.7 m thick (outer face 6.75 m). The ground
@@ -183,7 +164,9 @@ func _build_station(spec: Dictionary, railway: Node3D, world_data: Dictionary) -
 	if kind == "underground":
 		_build_underground_station(station, spec, rail_anchor, rail_yaw)
 	elif kind == "elevated":
-		_build_surface_station(station, spec, float(spec.get("elevation", 12.0)))
+		# Milsons Point is built grounded, with its stair, by milsons_point.gd.
+		# The generic hall here hung in mid-air with no way up to it.
+		pass
 	else:
 		_build_surface_station(station, spec, 0.25)
 

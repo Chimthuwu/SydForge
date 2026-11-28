@@ -135,7 +135,8 @@ func _box_mesh() -> BoxMesh:
 func _cylinder_mesh() -> CylinderMesh:
 	var mesh := CylinderMesh.new()
 	mesh.height = 1.0
-	mesh.radius = 0.5
+	mesh.top_radius = 0.5
+	mesh.bottom_radius = 0.5
 	return mesh
 
 

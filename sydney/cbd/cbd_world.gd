@@ -25,6 +25,10 @@ const STAGE_B_PATH := "res://sydney/world/stage_b/world.json"
 const STAGE_LABEL := "STAGE B"
 
 const CbdBuildings := preload("res://sydney/cbd/cbd_buildings.gd")
+const HydeParkLayout := preload("res://sydney/cbd/hyde_park_layout.gd")
+const HYDE_PARK_STREET_GAP := Rect2(215.0, 30.0, 180.0, 60.0)
+const MeshTiler := preload("res://sydney/cbd/mesh_tiler.gd")
+const MilsonsPoint := preload("res://sydney/landmarks/milsons_point.gd")
 const CbdGreenery := preload("res://sydney/cbd/cbd_greenery.gd")
 ## Bump when CbdBuildings.build()'s result shape changes, so a stale cache
 ## from an older build is never loaded silently.
@@ -167,6 +171,7 @@ func _build() -> void:
 	supermarkets.build(data)
 	add_child(supermarkets)
 	geometry_counts["Supermarkets"] = supermarkets.stats
+	_clear_shops_behind(supermarkets)
 	var street_signs := CbdStreetSigns.new()
 	street_signs.build(data)
 	add_child(street_signs)
@@ -184,6 +189,14 @@ func _build() -> void:
 		interiors.build(railway, data)
 		add_child(interiors)
 		geometry_counts["StationInteriors"] = interiors.stats
+		var bridge_node := get_node_or_null("HarbourBridge")
+		if bridge_node != null:
+			var milsons := MilsonsPoint.new()
+			var track: Array = railway.get("main_route_points")
+			var heading: Vector3 = track[3] - track[0]
+			milsons.build(bridge_node, track[0], heading)
+			add_child(milsons)
+			geometry_counts["MilsonsPoint"] = milsons.stats
 	else:
 		railway.free()
 	elapsed = (Time.get_ticks_usec() - start) / 1000.0
@@ -283,6 +296,14 @@ func _sanitize_buildings() -> void:
 			polygon.append(Vector2(float(point[0]), float(point[1])))
 		if polygon.size() >= 3:
 			water_polygons.append(polygon)
+	var hyde: Array[PackedVector2Array] = []
+	for park: Dictionary in data.get("parks", []):
+		if str(park.get("id", "")) in HydeParkLayout.PARK_IDS:
+			for hyde_ring: Array in park.get("rings", []):
+				var outline := PackedVector2Array()
+				for point: Array in hyde_ring:
+					outline.append(Vector2(float(point[0]), float(point[1])))
+				hyde.append(outline)
 	var kept: Array = []
 	var removed_invalid := 0
 	var fattened := 0
@@ -315,6 +336,10 @@ func _sanitize_buildings() -> void:
 		for point in ring:
 			centroid += point
 		centroid /= float(ring.size())
+		# The Park Street road reserve between the two halves counts as park too:
+		# a 48 m slab of generated infill stood across it.
+		if is_generated and _blocks_hyde_park(ring, centroid, hyde):
+			continue
 		var in_water := false
 		for polygon in water_polygons:
 			if Geometry2D.is_point_in_polygon(centroid, polygon):
@@ -354,6 +379,15 @@ func _sanitize_buildings() -> void:
 	stats["buildingsRejectedWater"] = removed_water
 	if removed_invalid + fattened + removed_road + removed_water > 0:
 		print("CbdWorld: rejected %d invalid, widened %d thin, %d carriageway and %d water building rows" % [removed_invalid, fattened, removed_road, removed_water])
+
+
+func _blocks_hyde_park(ring: PackedVector2Array, centroid: Vector2, hyde: Array[PackedVector2Array]) -> bool:
+	if HYDE_PARK_STREET_GAP.has_point(centroid):
+		return true
+	for outline in hyde:
+		if Geometry2D.is_point_in_polygon(centroid, outline):
+			return true
+	return false
 
 
 func _ring_average_width(ring: PackedVector2Array) -> float:
@@ -635,6 +669,8 @@ func _load_cbd_building_cache() -> CbdBuildingCacheData:
 
 
 func _save_cbd_building_cache(cache: CbdBuildingCacheData) -> void:
+	if OS.has_feature("web"):
+		return  # browser storage cannot hold the caches
 	DirAccess.make_dir_recursive_absolute("user://cache")
 	var err := ResourceSaver.save(cache, _cbd_building_cache_path())
 	if err != OK:
@@ -647,6 +683,27 @@ func _save_cbd_building_cache(cache: CbdBuildingCacheData) -> void:
 ## ground is extended well past the playable bounds while the collision box keeps
 ## its documented size. Underground station interiors require rectangular
 ## openings cut through both the visual ground and its collision.
+## Removes any small chain storefront that would poke through a supermarket's
+## wide frontage on the same wall.
+func _clear_shops_behind(supermarkets: Node3D) -> void:
+	var removed := 0
+	for store: Node3D in supermarkets.stores:
+		var half := float(store.get_meta("frontage_width", 0.0)) * 0.5
+		for shop: Node in find_children("Business_*", "Node3D", true, false):
+			var local: Vector3 = store.transform.affine_inverse() * (shop as Node3D).position
+			if absf(local.x) < half + 3.0 and absf(local.z) < 2.5 and not shop.is_queued_for_deletion():
+				print("CbdWorld: %s makes way for %s" % [shop.name, store.name])
+				shop.get_parent().remove_child(shop)
+				shop.queue_free()
+				removed += 1
+	geometry_counts["ShopsClearedForSupermarkets"] = removed
+
+
+## Centre height of the 0.4 m visual ground slabs (their top is 14 cm under the
+## collision plane; 2 cm was too close to the grass to resolve at distance).
+const GROUND_SLAB_Y := -0.34
+
+
 func _build_ground() -> void:
 	var min_x := float(bounds["minX"])
 	var max_x := float(bounds["maxX"])
@@ -700,7 +757,7 @@ func _build_ground() -> void:
 		box.size = Vector3(rect.size.x, 0.4, rect.size.y)
 		instance.mesh = box
 		instance.material_override = mat
-		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.22, rect.position.y + rect.size.y * 0.5)
+		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, GROUND_SLAB_Y, rect.position.y + rect.size.y * 0.5)
 		add_child(instance)
 
 	# Extended visual ground beyond the playable/collision bounds, split so it
@@ -715,7 +772,7 @@ func _build_ground() -> void:
 		box.size = Vector3(rect.size.x, 0.4, rect.size.y)
 		instance.mesh = box
 		instance.material_override = mat
-		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, -0.22, rect.position.y + rect.size.y * 0.5)
+		instance.position = Vector3(rect.position.x + rect.size.x * 0.5, GROUND_SLAB_Y, rect.position.y + rect.size.y * 0.5)
 		add_child(instance)
 
 
@@ -753,7 +810,7 @@ func _build_descent_cut_ground(path: Array, cut_rect: Rect2, mat: Material) -> v
 		left.append(point + side)
 		right.append(point - side)
 
-	var top := -0.02
+	var top := GROUND_SLAB_Y + 0.2
 	var faces := PackedVector3Array()
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -796,7 +853,7 @@ func _build_descent_cut_ground(path: Array, cut_rect: Rect2, mat: Material) -> v
 		collider.shape = shape
 		# The visual slab's top is 2 cm below the collision plane used by the
 		# ordinary ground boxes; match it so the rim has no step.
-		collider.position = Vector3(0.0, 0.02, 0.0)
+		collider.position = Vector3(0.0, -top, 0.0)
 		var body := get_node_or_null("GroundCollision") as StaticBody3D
 		if body != null:
 			body.add_child(collider)
@@ -970,6 +1027,12 @@ func _build_roads() -> void:
 		var surface := get_node_or_null(node_name) as MeshInstance3D
 		if surface != null:
 			surface.material_override = _asphalt_material(Color("66645c"), 0.95)
+	# Last, once materials are final: tile the street surfaces so streetlights
+	# and headlights are not culled by the per-mesh light cap.
+	for node_name in ["Roads", "Footpaths", "Crossings", "Parking", "LaneMarkings", "Kerbs"]:
+		var street := get_node_or_null(node_name) as MeshInstance3D
+		if street != null:
+			MeshTiler.split(street)
 
 
 func _cbd_road_dressing_cache_path() -> String:
@@ -987,6 +1050,8 @@ func _load_cbd_road_dressing_cache() -> CbdRoadDressingCacheData:
 
 
 func _save_cbd_road_dressing_cache(cache: CbdRoadDressingCacheData) -> void:
+	if OS.has_feature("web"):
+		return  # browser storage cannot hold the caches
 	DirAccess.make_dir_recursive_absolute("user://cache")
 	var err := ResourceSaver.save(cache, _cbd_road_dressing_cache_path())
 	if err != OK:
@@ -1141,7 +1206,7 @@ func _asphalt_material(color: Color, roughness: float) -> ShaderMaterial:
 	material.shader = ASPHALT_SHADER
 	material.set_shader_parameter("base_color", color)
 	material.set_shader_parameter("roughness_base", roughness)
-	material.set_shader_parameter("patch_strength", 0.14 if roughness > 0.9 else 0.22)
+	material.set_shader_parameter("patch_strength", 0.04 if roughness > 0.9 else 0.06)
 	return material
 
 

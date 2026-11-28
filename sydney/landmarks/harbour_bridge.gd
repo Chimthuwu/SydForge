@@ -17,6 +17,8 @@ var collision := PackedVector3Array()
 var members: Array = []
 var _box := BoxMesh.new()
 
+const StationInteriorsScript := preload("res://sydney/railway/station_interiors.gd")
+
 func point(s: float, x: float, y: float) -> Vector3:
 	return centre + north*s + east*x + Vector3.UP*y
 
@@ -328,12 +330,30 @@ func _build_southern_city_connector() -> void:
 		return
 	var connector_length := 190.0
 	var path: Array = []
-	for index in 9:
-		var point := last + direction * (connector_length * float(index) / 8.0)
+	for index in 39:
+		var point := last + direction * (connector_length * float(index) / 38.0)
 		point.y = last.y
 		path.append(Vector2(point.x, point.z))
-	var paths: Array = [path]
-	var widths: Array = [24.0]
+	# Never lay the connector over the open rail ramp: trains punched straight
+	# through it. Split it into the runs that stay clear of the cutting.
+	var clearance: float = 12.0 + StationInteriorsScript.DESCENT_CUT_HALF_WIDTH
+	var cut: Array = StationInteriorsScript.descent_cut_path()
+	var segments: Array = []
+	var paths: Array = []
+	var widths: Array = []
+	for index in range(path.size() - 1):
+		var middle: Vector2 = (path[index] + path[index + 1]) * 0.5
+		var blocked := false
+		for j in range(cut.size() - 1):
+			if Geometry2D.get_closest_point_to_segment(middle, cut[j], cut[j + 1]).distance_to(middle) < clearance:
+				blocked = true
+				break
+		if not blocked:
+			segments.append([path[index], path[index + 1]])
+			paths.append([path[index], path[index + 1]])
+			widths.append(24.0)
+	if segments.is_empty():
+		return
 	var surface := SydneyMesh.flat_paths(paths, widths, 0.06, Color("34383c"))
 	var instance := MeshInstance3D.new()
 	instance.name = "SouthernCityConnector"
@@ -344,9 +364,9 @@ func _build_southern_city_connector() -> void:
 	var body := StaticBody3D.new()
 	body.name = "SouthernCityConnectorCollision"
 	add_child(body)
-	for index in range(path.size() - 1):
-		var a: Vector2 = path[index]
-		var b: Vector2 = path[index + 1]
+	for pair: Array in segments:
+		var a: Vector2 = pair[0]
+		var b: Vector2 = pair[1]
 		var segment := b - a
 		var segment_length := segment.length()
 		if segment_length < 0.01:

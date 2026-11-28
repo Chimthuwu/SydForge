@@ -94,6 +94,8 @@ class MiniMap extends Control:
 var player: BoomPlayer
 var rig: BoomCamera
 var enemy: BoomEnemy
+## Multiplayer room code used by F6/F7 and the menu.
+var room_code := "lobby"
 var hud: Label
 var status: Label
 var hint: Label
@@ -253,9 +255,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			deathmatch_manager.leave()
 			message = "DEATHMATCH · session ended"
 		else:
-			message = "DEATHMATCH · %s" % deathmatch_manager.host()
+			message = "DEATHMATCH · %s" % deathmatch_manager.host(room_code)
 	if event.is_action_pressed("dm_join") and deathmatch_manager != null and not deathmatch_manager.active:
-		message = "DEATHMATCH · %s" % deathmatch_manager.join("127.0.0.1")
+		message = "DEATHMATCH · %s" % deathmatch_manager.join(room_code)
 	if event.is_action_pressed("dm_scoreboard") and scoreboard_label != null:
 		scoreboard_visible = not scoreboard_visible
 		scoreboard_label.visible = scoreboard_visible

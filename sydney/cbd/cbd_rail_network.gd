@@ -8,11 +8,21 @@ extends Node3D
 
 const DATA_PATH := "res://sydney/railway/milsons_redfern.json"
 const ART := preload("res://scripts/art.gd")
+const TunnelCarver := preload("res://sydney/cbd/tunnel_carver.gd")
 const TRACK_GAUGE := 1.435
 const TRACK_CENTRE_SPACING := 3.8
 const SLEEPER_SPACING := 3.0
 const RAIL_OFFSET := 0.7175
 const MAX_ROUTE_GAP := 180.0
+const DIVE_LENGTH_M := 80.0
+## The covered approach starts this far back up the Harbour Bridge, measured as a
+## share of the whole bridge, and runs down to the underground bore.
+const GALLERY_BRIDGE_SHARE := 0.25
+const GALLERY_HALF_WIDTH := 4.9   # fits between the bridge's rail parapets
+const GALLERY_CLEAR_HEIGHT := 5.7 # above track level; a K set is 4.4
+const GALLERY_WALL := 0.45
+const DESCENT_HALF_SPAN := 6.6    # lid width over the open ramp
+const DIVE_BOTTOM_Y := -7.6
 
 ## A 6.8 m bore only fits under the flat city slab once its track is deep
 ## enough. Starting the enclosure while the track is still at road grade stood
@@ -60,6 +70,7 @@ func build(world_data: Dictionary, harbour_bridge: Node3D) -> bool:
 	_build_tunnel_enclosures()
 	_build_below_grade_floor()
 	_build_descent_cutting()
+	_build_approach_gallery()
 	_build_stations(world_data)
 	stats = {
 		"stations": station_nodes.size(),
@@ -287,18 +298,24 @@ func _apply_station_elevations() -> void:
 		var next_y := main_route_points[_bridge_range.x + 1].y
 		main_route_points[_bridge_range.x].y = lerpf(prev_y, next_y, 0.5)
 
-	# Southern bridge approach: hold near surface briefly after the bridge, pass
-	# through a portal/descent zone, then enter the underground bore to Wynyard.
-	# This avoids the track diving through surface terrain/buildings immediately
-	# after the bridge while still reaching the underground station level.
-	var descent_start := mini(_bridge_range.y + 8, wynyard_index)
-	var portal_index := mini(_bridge_range.y + 22, wynyard_index)
-	var tunnel_entry_index := mini(_bridge_range.y + 34, wynyard_index)
+	# Southern bridge approach: the track leaves the deck at the very start of the
+	# bridge and dives straight into a covered bore that runs to Wynyard. Only
+	# the short ramp is open. It has to be steep: by the first road that crosses
+	# the ramp (~65 m on) the roof of the train must already be below the slab.
+	# The OSM way after the bridge starts slightly east of the bridge's rail
+	# alignment; ease out that one-point sideways kink.
+	var join := _bridge_range.y
+	var eased := (main_route_points[join - 1] + main_route_points[join + 1]) * 0.5
+	main_route_points[join].x = eased.x
+	main_route_points[join].z = eased.z
 	var bridge_exit_y := main_route_points[_bridge_range.y].y
-	_set_route_elevation(_bridge_range.y, descent_start, bridge_exit_y, bridge_exit_y)
-	_set_route_elevation(descent_start, portal_index, bridge_exit_y, 0.15)
-	_set_route_elevation(portal_index, tunnel_entry_index, 0.15, -2.0)
-	_set_route_elevation(tunnel_entry_index, wynyard_index, -2.0, -10.0)
+	var ramp_end := _bridge_range.y
+	var ramp_length := 0.0
+	while ramp_end < wynyard_index - 1 and ramp_length < DIVE_LENGTH_M:
+		ramp_length += main_route_points[ramp_end].distance_to(main_route_points[ramp_end + 1])
+		ramp_end += 1
+	_set_route_elevation(_bridge_range.y, ramp_end, bridge_exit_y, DIVE_BOTTOM_Y)
+	_set_route_elevation(ramp_end, wynyard_index, DIVE_BOTTOM_Y, -10.0)
 
 	_set_route_elevation(wynyard_index, town_hall_index, -10.0, -10.0)
 	_set_route_elevation(town_hall_index, central_index, -10.0, 0.1)
@@ -367,31 +384,30 @@ func _build_track_meshes() -> void:
 			continue
 		direction /= length
 		var midpoint := (a + b) * 0.5
-		var centerline_y := (a.y + b.y) * 0.5
-		var vertical_basis := _track_basis(direction)
+		var slope := (b - a).normalized()
+		var across := Vector3.UP.cross(slope).normalized()
+		var pitched := Basis(across, slope.cross(across).normalized(), slope)
+		var span := a.distance_to(b)
 		_emit_box(
 			ballast_surface,
-			midpoint + Vector3.UP * (centerline_y - 0.13),
-			vertical_basis,
-			Vector3(8.2, 0.18, length),
+			midpoint + Vector3.UP * -0.13,
+			pitched,
+			Vector3(8.2, 0.18, span),
 			Vector3.UP
 		)
 		for track_side in [-1.0, 1.0]:
-			var track_center: Vector3 = vertical_basis.x * track_side * TRACK_CENTRE_SPACING * 0.5
+			var track_center: Vector3 = across * track_side * TRACK_CENTRE_SPACING * 0.5
 			for rail_side in [-1.0, 1.0]:
-				var rail_position: Vector3 = midpoint + track_center \
-					+ vertical_basis.x * rail_side * RAIL_OFFSET \
-					+ Vector3.UP * (centerline_y + 0.075)
+				var rail_position: Vector3 = midpoint + track_center 					+ across * rail_side * RAIL_OFFSET + Vector3.UP * 0.075
 				_emit_box(
-					rail_surface, rail_position, vertical_basis,
-					Vector3(0.12, 0.16, length), vertical_basis.x
+					rail_surface, rail_position, pitched,
+					Vector3(0.12, 0.16, span), across
 				)
 			var next_sleeper := SLEEPER_SPACING - sleeper_phase
 			while next_sleeper < length:
-				var sleeper_center: Vector3 = a.lerp(b, next_sleeper / length) + track_center \
-					+ Vector3.UP * (centerline_y - 0.015)
+				var sleeper_center: Vector3 = a.lerp(b, next_sleeper / length) + track_center 					+ Vector3.UP * -0.015
 				_emit_box(
-					sleeper_surface, sleeper_center, vertical_basis,
+					sleeper_surface, sleeper_center, pitched,
 					Vector3(2.8, 0.14, 0.28), Vector3.UP
 				)
 				next_sleeper += SLEEPER_SPACING
@@ -514,37 +530,7 @@ func _build_stations(world_data: Dictionary) -> void:
 		add_child(node)
 		station_nodes[station_id] = node
 		_build_station_shell(node, station, world_data)
-	_build_southern_bridge_portal()
 	_build_central_emergence_portal()
-
-
-func _build_southern_bridge_portal() -> void:
-	if _bridge_range.y < 0 or _bridge_range.y + 1 >= main_route_points.size():
-		return
-	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
-	var portal_index := _bridge_range.y
-	if wynyard_idx > _bridge_range.y:
-		# Put the mouth where the track actually starts diving (see
-		# _apply_station_elevations: descent_start -> portal_index -> bore). The
-		# old +6 marker sat well behind the dive, so the train appeared to drive
-		# into bare ground with no portal in sight.
-		portal_index = clampi(_bridge_range.y + 22, _bridge_range.y + 1, wynyard_idx - 1)
-	var position := main_route_points[portal_index]
-	var forward := _route_direction(portal_index)
-	var portal := Node3D.new()
-	portal.name = "WynyardRailTunnelPortal"
-	portal.position = Vector3(position.x, 0.0, position.z)
-	portal.rotation.y = atan2(-forward.x, -forward.z)
-	add_child(portal)
-	# Flush stone coping and short side piers read as a rail cutting mouth while
-	# staying below the sightline of traffic on the approach roads.
-	ART.box(portal, Vector3(0.0, 0.3, 0.55), Vector3(8.2, 0.6, 1.1), Color("77736a"))
-	for side in [-1.0, 1.0]:
-		ART.box(
-			portal, Vector3(side * 3.25, 0.7, 0.0),
-			Vector3(0.45, 1.4, 1.25), Color("a59a82")
-		)
-	ART.box(portal, Vector3(0.0, 1.35, 0.0), Vector3(7.2, 0.3, 1.35), Color("b8ac91"))
 
 
 func _build_central_emergence_portal() -> void:
@@ -798,15 +784,6 @@ func _is_tunnel_segment(segment_index: int) -> bool:
 		if absi(segment_index - idx) <= 5:
 			return false
 
-	# Southern bridge descent: only enclose once the whole bore roof is below
-	# grade. At road grade (y ≈ 0.15) a 6.8 m wall would stand on the asphalt;
-	# the train now disappears under the surface slab before the bore starts.
-	var wynyard_idx := int(station_route_indices.get("wynyard", -1))
-	if _bridge_range.y >= 0 and wynyard_idx > _bridge_range.y \
-	and segment_index > _bridge_range.y + 18 and segment_index < wynyard_idx - 10:
-		if mid_y <= TUNNEL_MIN_TRACK_Y:
-			return true
-
 	# Keep ascent/descent mouths slightly open near Central emergence.
 	var central_idx := int(station_route_indices.get("central", -1))
 	if central_idx >= 0 and segment_index >= central_idx - 8 and segment_index <= central_idx + 2:
@@ -846,8 +823,8 @@ func _build_tunnel_enclosures() -> void:
 			continue
 		direction /= length
 		var basis := _track_basis(direction)
-		var mid := (a + b) * 0.5
 		var track_y := (a.y + b.y) * 0.5
+		var mid := Vector3((a.x + b.x) * 0.5, 0.0, (a.z + b.z) * 0.5)
 		var tunnel_half_w := 5.4
 		var wall_thickness := 0.55
 		var wall_height := TUNNEL_WALL_HEIGHT
@@ -921,20 +898,10 @@ func _build_below_grade_floor() -> void:
 		var track_y := (a.y + b.y) * 0.5
 		if track_y > -0.8:
 			continue
-		var direction := b - a
-		direction.y = 0.0
-		var length := direction.length()
-		if length < 0.1:
+		if a.distance_to(b) < 0.1:
 			continue
-		var basis := _track_basis(direction / length)
-		var top := track_y - 0.04 # ballast top, where feet and tyres rest
-		var mid := (a + b) * 0.5
-		_add_collision_box(
-			body,
-			Vector3(mid.x, top - 0.6, mid.z),
-			basis,
-			Vector3(11.0, 1.2, length + 0.8)
-		)
+		# ballast top, where feet and tyres rest
+		_add_sloped_slab(body, a, b, 0.04, 11.0, 1.2, 0.8)
 		boxes += 1
 	if boxes == 0:
 		body.free()
@@ -960,21 +927,20 @@ func _build_descent_cutting() -> void:
 		return
 	var surface := SurfaceTool.new()
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var parapet_surface := SurfaceTool.new()
-	parapet_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var collision_root := StaticBody3D.new()
 	collision_root.name = "RailDescentCuttingCollision"
 	add_child(collision_root)
-	var parapet_center := 6.75
-	var parapet_height := 1.2
 	# One continuous floor and one continuous collision surface. Per-segment
 	# boxes left wedge-shaped gaps on the outside of every curve at the joints;
 	# the player fell through those into the void below the city.
 	var floor_left: Array[Vector3] = []
 	var floor_right: Array[Vector3] = []
 	var floor_faces := PackedVector3Array()
-	for i in range(first, last + 1):
-		var before: Vector3 = main_route_points[maxi(i - 1, first)]
+	# The floor starts at the end of the bridge deck: the segment before the first
+	# below-grade point had no floor of its own, and players fell through there.
+	var floor_first := maxi(first - 1, _bridge_range.y)
+	for i in range(floor_first, last + 1):
+		var before: Vector3 = main_route_points[maxi(i - 1, floor_first)]
 		var after: Vector3 = main_route_points[mini(i + 1, last)]
 		var forward := after - before
 		forward.y = 0.0
@@ -982,42 +948,30 @@ func _build_descent_cutting() -> void:
 			forward = Vector3.FORWARD
 		var side := Vector3.UP.cross(forward.normalized()).normalized()
 		var point: Vector3 = main_route_points[i]
-		var floor_y := point.y - 0.27
+		# Meets the deck at the top and the bore's ballast at the bottom.
+		var drop := 0.19 if i < first else 0.27
+		if i >= last - 1:
+			drop = 0.04 if i == last else 0.15
+		var floor_y := point.y - drop
 		var centre := Vector3(point.x, floor_y, point.z)
 		floor_left.append(centre + side * 6.6)
 		floor_right.append(centre - side * 6.6)
 	for j in range(floor_left.size() - 1):
 		_emit_floor_quad(surface, floor_faces, floor_left[j], floor_left[j + 1],
 			floor_right[j + 1], floor_right[j])
-	if floor_faces.size() >= 3:
-		var floor_shape := ConcavePolygonShape3D.new()
-		floor_shape.set_faces(floor_faces)
-		floor_shape.backface_collision = true
-		var floor_collider := CollisionShape3D.new()
-		floor_collider.shape = floor_shape
-		collision_root.add_child(floor_collider)
-	# The visual/collision surface above is a zero-thickness triangle strip. At
-	# road speed a CharacterBody can end a physics step below it without ever
-	# registering a contact, so the car drops through the trench. Give the cut a
-	# real slab underneath: per-segment boxes overlapping at the joints, exactly
-	# like the retaining walls. The strip above stays the walking surface.
-	for i in range(first, last):
-		var a: Vector3 = main_route_points[i]
-		var b: Vector3 = main_route_points[i + 1]
-		var direction := b - a
-		direction.y = 0.0
-		var length := direction.length()
-		if length < 0.1:
-			continue
-		var basis := _track_basis(direction / length)
-		var top := ((a.y + b.y) * 0.5) - 0.27
-		var mid := (a + b) * 0.5
-		_add_collision_box(
-			collision_root,
-			Vector3(mid.x, top - 0.75, mid.z),
-			basis,
-			Vector3(13.2, 1.5, length + 1.0) # matches DESCENT_CUT_HALF_WIDTH * 2
-		)
+	# Collision is one solid block per span, sharing its top corners with the
+	# visible floor. A thin triangle floor snagged walkers on its seams, and
+	# overlapping boxes left small lips on the curve.
+	for j in range(floor_left.size() - 1):
+		var points := PackedVector3Array()
+		for corner: Vector3 in [floor_left[j], floor_left[j + 1], floor_right[j + 1], floor_right[j]]:
+			points.append(corner)
+			points.append(corner + Vector3.DOWN * 1.5)
+		var hull := ConvexPolygonShape3D.new()
+		hull.points = points
+		var block := CollisionShape3D.new()
+		block.shape = hull
+		collision_root.add_child(block)
 	for i in range(first, last):
 		var a := main_route_points[i]
 		var b := main_route_points[i + 1]
@@ -1028,9 +982,9 @@ func _build_descent_cutting() -> void:
 			continue
 		direction /= length
 		var basis := _track_basis(direction)
-		var mid := (a + b) * 0.5
+		var mid := Vector3((a.x + b.x) * 0.5, 0.0, (a.z + b.z) * 0.5)
 		var track_y := (a.y + b.y) * 0.5
-		var top := 0.45
+		var top := -0.4 # under the gallery's flush lid
 		var bottom := track_y - 0.7
 		var height := top - bottom
 		if height < 0.25:
@@ -1043,17 +997,201 @@ func _build_descent_cutting() -> void:
 			# Overlap collision at the joints so the outside of a curve cannot
 			# leave a wedge the player can squeeze through.
 			_add_collision_box(collision_root, wall_pos, basis, Vector3(0.7, height, length + 1.2))
-			# Street-level protection. Without it the player could simply walk
-			# off the pavement into the trench. 1.65 m total is above the jump apex.
-			var parapet_pos: Vector3 = mid + basis.x * (float(side) * parapet_center) \
-				+ Vector3.UP * (top + parapet_height * 0.5)
-			var parapet_size := Vector3(0.35, parapet_height, length + 0.4)
-			_emit_box(parapet_surface, parapet_pos, basis, parapet_size, Vector3.UP)
-			_add_collision_box(collision_root, parapet_pos, basis,
-				Vector3(0.35, parapet_height, length + 1.2))
 	_commit_mesh("RailDescentCutting", surface, Color("5a5750"), 0.97)
-	_commit_mesh("RailDescentCuttingParapet", parapet_surface, Color("8a8579"), 0.95)
 	_build_cutting_portal(first, last)
+
+
+## First route index under the above-ground tunnel on the bridge approach.
+func gallery_start_index() -> int:
+	if _bridge_range.y <= _bridge_range.x:
+		return -1
+	return _bridge_range.y - roundi(float(_bridge_range.y - _bridge_range.x) * GALLERY_BRIDGE_SHARE)
+
+
+## Above-ground tunnel from a quarter of the way up the bridge to the bore, so a
+## train is never seen cutting through the roadway where it dives underground.
+## Over the open ramp the walls widen to cover the trench, and the roof never
+## drops below street level: where the track is deep it becomes a flush lid.
+func _build_approach_gallery() -> void:
+	var first := gallery_start_index()
+	var last := _descent_cut_last_index()
+	if first < 0 or last <= first:
+		return
+	var shell := SurfaceTool.new()
+	shell.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var stone := SurfaceTool.new()
+	stone.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var body := StaticBody3D.new()
+	body.name = "RailApproachGalleryCollision"
+	body.add_to_group("no_climb")
+	add_child(body)
+
+	# One cross-section per route point, shared by neighbouring spans, so the
+	# shell has no cracks on the curve or where the gradient changes.
+	var sections: Array = []
+	for i in range(first, last + 1):
+		var forward := _route_direction(i)
+		var side := Vector3.UP.cross(forward).normalized()
+		var point: Vector3 = main_route_points[i]
+		var on_ramp := i >= _bridge_range.y
+		var inner := DESCENT_HALF_SPAN if on_ramp else GALLERY_HALF_WIDTH
+		var roof := maxf(point.y + GALLERY_CLEAR_HEIGHT, 0.06 - GALLERY_WALL)
+		var foot := point.y - 0.5
+		var centre := Vector3(point.x, 0.0, point.z)
+		var ring: Array[Vector3] = []
+		for offset: Vector2 in [
+			Vector2(-inner, foot), Vector2(-inner, roof),
+			Vector2(inner, roof), Vector2(inner, foot),
+			Vector2(-inner - GALLERY_WALL, foot), Vector2(-inner - GALLERY_WALL, roof + GALLERY_WALL),
+			Vector2(inner + GALLERY_WALL, roof + GALLERY_WALL), Vector2(inner + GALLERY_WALL, foot),
+		]:
+			ring.append(centre + side * offset.x + Vector3.UP * offset.y)
+		sections.append(ring)
+
+	var faces := PackedVector3Array()
+	for index in sections.size() - 1:
+		var a: Array[Vector3] = sections[index]
+		var b: Array[Vector3] = sections[index + 1]
+		# inner left, ceiling, inner right, outer left, top, outer right
+		for edge: Vector2i in [Vector2i(0, 1), Vector2i(1, 2), Vector2i(2, 3),
+				Vector2i(4, 5), Vector2i(5, 6), Vector2i(6, 7)]:
+			var quad := [a[edge.x], a[edge.y], b[edge.y], b[edge.x]]
+			var normal: Vector3 = (quad[1] - quad[0]).cross(quad[3] - quad[0]).normalized()
+			if normal.length_squared() < 0.5:
+				continue
+			for corner in [0, 1, 2, 0, 2, 3]:
+				shell.set_normal(normal)
+				shell.add_vertex(quad[corner])
+				faces.append(quad[corner])
+	var shape := ConcavePolygonShape3D.new()
+	shape.set_faces(faces)
+	shape.backface_collision = true
+	var collider := CollisionShape3D.new()
+	collider.shape = shape
+	body.add_child(collider)
+
+	var wall := SurfaceTool.new()
+	wall.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_build_arch_mouth(stone, wall, main_route_points[first], _route_direction(first))
+	_commit_mesh("RailApproachGallery", shell, Color("8d877a"), 0.95)
+	_commit_mesh("RailApproachPortalArch", stone, Color("d9cdb0"), 0.93)
+	_commit_mesh("RailApproachPortalWall", wall, Color("877b66"), 0.96)
+	# Deferred: street dressing and its tiles are built after the railway.
+	_clear_gallery_interior.call_deferred()
+
+
+## The space inside the above-ground tunnel, from the floor to the ceiling. On
+## the bridge the deck is the floor, so the cut starts just above it.
+func gallery_interior() -> Array:
+	var volumes: Array = []
+	var first := gallery_start_index()
+	var last := _descent_cut_last_index()
+	if first < 0 or last <= first:
+		return volumes
+	for i in range(first, last):
+		var a: Vector3 = main_route_points[i]
+		var b: Vector3 = main_route_points[i + 1]
+		var along := b - a
+		if along.length() < 0.1:
+			continue
+		var forward := along.normalized()
+		var side := Vector3.UP.cross(forward).normalized()
+		var up := forward.cross(side).normalized()
+		var on_ramp := i >= _bridge_range.y
+		var half := (DESCENT_HALF_SPAN if on_ramp else GALLERY_HALF_WIDTH) - 0.05
+		# Below the ramp floor (rail - 0.27), or a lip of the old deck remains.
+		var low := -0.5 if on_ramp else 0.45
+		# Stop short of the ceiling; where the lid is flush the ceiling is below
+		# street level, so the street on top of it survives.
+		var high := GALLERY_CLEAR_HEIGHT - 0.05
+		if on_ramp:
+			high = maxf(maxf(a.y, b.y) + GALLERY_CLEAR_HEIGHT, -0.39) - (a.y + b.y) * 0.5 - 0.05
+		var centre := (a + b) * 0.5 + up * (low + high) * 0.5
+		volumes.append(TunnelCarver.box(Transform3D(Basis(side, up, forward), centre),
+			Vector3(half * 2.0, high - low, along.length() + 0.6)))
+		if i <= first:
+			continue
+		# On a bend the two neighbouring cuts leave a wedge on the outside.
+		var before := a - main_route_points[i - 1]
+		var turn := Vector2(before.x, before.z).angle_to(Vector2(along.x, along.z))
+		var wedge := 2.0 * half * sin(absf(turn) * 0.5)
+		if wedge < 0.5:
+			continue
+		var heading := (before.normalized() + forward).normalized()
+		var across := Vector3.UP.cross(heading).normalized()
+		var lift := heading.cross(across).normalized()
+		volumes.append(TunnelCarver.box(
+			Transform3D(Basis(across, lift, heading), a + lift * (low + high) * 0.5),
+			Vector3(half * 2.0, high - low, wedge + 0.6)))
+	return volumes
+
+
+func _clear_gallery_interior() -> void:
+	var world := get_parent()
+	if world == null:
+		return
+	# A street deck over the trench is a solid box: drop it where the tunnel
+	# stands above the street, because the roof already covers the trench there.
+	var decks := world.get_node_or_null("RailCutRoadDecks")
+	if decks != null:
+		var colliders := decks.get_children()
+		for index in colliders.size():
+			var collider := colliders[index] as CollisionShape3D
+			var nearest: Vector3 = main_route_points[_nearest_route_index(collider.global_position)]
+			if nearest.y + GALLERY_CLEAR_HEIGHT + GALLERY_WALL > 0.3:
+				var visual := world.get_node_or_null("RailCutRoadDeck_%d" % index) as Node3D
+				if visual != null:
+					visual.visible = false
+				collider.disabled = true
+	var volumes := gallery_interior()
+	TunnelCarver.carve(world, self, volumes)
+	if _bridge != null and not world.is_ancestor_of(_bridge):
+		TunnelCarver.carve(_bridge, self, volumes)
+
+
+## Dressed-stone horseshoe portal on the uphill end of the gallery: two piers,
+## a ring of separate voussoirs and the solid spandrel between ring and coping.
+func _build_arch_mouth(surface: SurfaceTool, wall: SurfaceTool, track: Vector3, forward: Vector3) -> void:
+	var basis := _track_basis(forward)
+	var out := -forward.normalized()
+	var centre := Vector3(track.x, 0.0, track.z) + out * 0.35
+	var half := GALLERY_HALF_WIDTH - 0.25
+	var spring := track.y + 2.9
+	var rise := GALLERY_CLEAR_HEIGHT - 2.9
+	var top := track.y + GALLERY_CLEAR_HEIGHT + 1.5
+	var outer_half := GALLERY_HALF_WIDTH + 0.75
+	for sign in [-1.0, 1.0]:
+		var courses := 6
+		var course_height := (spring - (track.y - 0.5)) / float(courses)
+		for course in courses:
+			var width := outer_half - half + (0.12 if course % 2 == 0 else 0.0)
+			_emit_box(surface, centre + basis.x * sign * (half + width * 0.5)
+				+ Vector3.UP * (track.y - 0.5 + course_height * (course + 0.5)),
+				basis, Vector3(width, course_height - 0.06, 1.0), Vector3.UP)
+	var segments := 15
+	for index in segments:
+		var angle := PI * (float(index) + 0.5) / float(segments)
+		var on_curve := Vector2(cos(angle) * half, sin(angle) * rise)
+		var tangent := Vector2(-sin(angle) * half, cos(angle) * rise).normalized()
+		var radial := Vector2(tangent.y, -tangent.x)
+		var step := Vector2(-sin(angle) * half, cos(angle) * rise).length() * PI / float(segments)
+		var x_axis: Vector3 = basis.x * tangent.x + Vector3.UP * tangent.y
+		var y_axis: Vector3 = basis.x * radial.x + Vector3.UP * radial.y
+		var block := on_curve + radial * 0.42
+		_emit_box(surface, centre + basis.x * block.x + Vector3.UP * (spring + block.y) + out * 0.1,
+			Basis(x_axis, y_axis, basis.z), Vector3(step - 0.07, 0.8, 1.1), Vector3.UP)
+	# Spandrel: thin vertical slices from the arch curve up to the coping.
+	var slices := 24
+	var slice_width := outer_half * 2.0 / float(slices)
+	for index in slices:
+		var x := -outer_half + slice_width * (float(index) + 0.5)
+		var ratio := clampf((absf(x) - slice_width * 0.5) / half, 0.0, 1.0)
+		var under := spring + rise * sqrt(1.0 - ratio * ratio) + 0.45 if absf(x) < half else spring
+		if top - under > 0.05:
+			_emit_box(wall, centre + basis.x * x + Vector3.UP * ((top + under) * 0.5) - out * 0.12,
+				basis, Vector3(slice_width + 0.01, top - under, 0.7), Vector3.UP)
+	_emit_box(surface, centre + Vector3.UP * (top + 0.2), basis,
+		Vector3(outer_half * 2.0 + 0.5, 0.4, 1.35), Vector3.UP)
 
 
 ## First route index of the southern open cut: the portal where the authored
@@ -1087,7 +1225,7 @@ func _build_cutting_portal(first: int, last: int) -> void:
 	var anchor: Vector3 = main_route_points[last + 1]
 	var forward := _route_direction(last + 1)
 	var portal := Node3D.new()
-	portal.name = "WynyardRailCuttingPortal"
+	portal.name = "WynyardRailTunnelPortal"
 	portal.position = Vector3(anchor.x, 0.0, anchor.z)
 	portal.rotation.y = atan2(-forward.x, -forward.z)
 	add_child(portal)
@@ -1108,6 +1246,16 @@ func _build_cutting_portal(first: int, last: int) -> void:
 		Vector3(open_half * 2.0 + 3.2, wall_h, 0.9), Color("6b675f")
 	)
 	ART.box(portal, Vector3(0.0, face_top + 0.25, 0.0), Vector3(open_half * 2.0 + 4.0, 0.5, 1.4), Color("8b8578"))
+
+
+## A floor box pitched with the track, its top `drop` metres under the rail line.
+func _add_sloped_slab(parent: StaticBody3D, a: Vector3, b: Vector3, drop: float,
+		width: float, depth: float, overlap: float) -> void:
+	var forward := (b - a).normalized()
+	var side := Vector3.UP.cross(forward).normalized()
+	var up := forward.cross(side).normalized()
+	_add_collision_box(parent, (a + b) * 0.5 - up * (drop + depth * 0.5),
+		Basis(side, up, forward), Vector3(width, depth, a.distance_to(b) + overlap))
 
 
 func _add_collision_box(parent: StaticBody3D, center: Vector3, basis: Basis, size: Vector3) -> void:

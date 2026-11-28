@@ -452,6 +452,15 @@ func _build_storefront(row: Dictionary, candidate: Dictionary) -> Node3D:
 	ArtUtil.box(shop, Vector3(0.0, fascia_y, 0.20), Vector3(width + 0.5, 1.02, 0.26), fascia)
 	ArtUtil.box(shop, Vector3(0.0, fascia_y + 0.53, 0.24), Vector3(width + 0.66, 0.13, 0.34), trim)
 	ArtUtil.box(shop, Vector3(0.0, fascia_y - 0.53, 0.24), Vector3(width + 0.60, 0.10, 0.32), trim.darkened(0.25))
+	# Lightbox strip under the fascia in the brand colour. Dark by day; the city
+	# lights manager raises its emission after dusk.
+	var tube := lettering if lettering.get_luminance() > 0.25 else fascia.lightened(0.35)
+	var glow := _material(tube.darkened(0.25), tube, 0.01)
+	glow.emission_energy_multiplier = 0.0
+	var strip := _box_mesh(shop, Vector3(0.0, fascia_y - 0.60, 0.42), Vector3(width + 0.3, 0.09, 0.07), glow)
+	strip.name = "NightGlow"
+	strip.set_meta("night_energy", 3.0)
+	strip.add_to_group("night_glow")
 	var sign := Label3D.new()
 	sign.text = _sign_text(display, kind, brand)
 	sign.font_size = 52

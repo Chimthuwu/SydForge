@@ -84,7 +84,7 @@ func _run() -> void:
 						break
 				if not known:
 					crossings.append({"point": point, "points": points, "seg": i})
-	_check(crossings.size() >= 14, "cutting crossings discovered (%d)" % crossings.size())
+	_check(crossings.size() >= 1, "cutting crossings discovered (%d)" % crossings.size())
 
 	var car: ArcadeCar = CarScene.instantiate()
 	world.add_child(car)

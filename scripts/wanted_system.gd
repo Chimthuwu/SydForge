@@ -15,6 +15,9 @@ const UNITS_BY_STAR := [0, 1, 2, 3, 4, 4]
 ## responses, while sustained serious crime still becomes challenging.
 const STAR_THRESHOLDS := [0.0, 18.0, 38.0, 60.0, 82.0, 96.0]
 
+## Seconds before a new star level can bring another car.
+const FIRST_RESPONSE_DELAY := 8.0
+
 var stars: int = 0
 var heat: float = 0.0
 var cooldown: float = 0.0
@@ -85,7 +88,7 @@ func _update_stars() -> void:
 		stars = next_stars
 		if increased and stars > 0:
 			# Local response: schedule a unit, but do not instantly flood.
-			_spawn_timer = minf(_spawn_timer, 2.5)
+			_spawn_timer = clampf(_spawn_timer, FIRST_RESPONSE_DELAY, 12.0)
 		elif stars <= 0:
 			# Stand down: clear active pursuit so police presence does not linger.
 			_cleanup_police_units()
