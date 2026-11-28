@@ -357,7 +357,10 @@ func _build_southern_city_connector() -> void:
 	var surface := SydneyMesh.flat_paths(paths, widths, 0.06, Color("34383c"))
 	var instance := MeshInstance3D.new()
 	instance.name = "SouthernCityConnector"
-	instance.mesh = surface
+	# Same engine-boundary conversion as the MilsonsStreets mesh above: without
+	# it the connector's triangles are math-CCW, which is the back face to Godot
+	# and fails the bridge suite's clockwise-winding check.
+	instance.mesh = SydneyMesh.engine_building_mesh(surface)
 	add_child(instance)
 	# Flat collision pad matches the exported city's flat ground; the bridge's
 	# own concave body carries the elevated section up to the tie-in.
