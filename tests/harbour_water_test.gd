@@ -283,12 +283,12 @@ func run() -> void:
 			for point in footpath.get("points", []):
 				_bbox_sample(point, harbour, wet, sampled, "footpaths")
 		for building in stage_b.get("buildings", []):
-			var ring: Array = building.get("ring", building.get("rings", []))
+			var ring = building.get("ring", building.get("rings", []))
 			if ring is Dictionary:
 				ring = ring.get("outer", [])
-			if ring.is_empty():
+			if not (ring is Array) or (ring as Array).is_empty():
 				continue
-			var point: Array = ring[0]
+			var point = (ring as Array)[0]
 			_bbox_sample(point, harbour, wet, sampled, "buildings")
 		check(sampled.roads > 500, "stage B west-bbox road sample is meaningful (%d)" % sampled.roads)
 		check(sampled.footpaths > 300, "stage B west-bbox footpath sample is meaningful (%d)" % sampled.footpaths)
