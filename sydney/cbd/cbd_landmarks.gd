@@ -340,7 +340,30 @@ func _build_central_station(world_data: Dictionary) -> void:
 	ArtUtil.box(group, Vector3(west_face - 0.15, 15.8, station.z), Vector3(0.9, 1.2, 30.0), STONE_LIGHT)
 	var station_sign := ArtUtil.label(group, Vector3(west_face - 0.8, 20.5, station.z), "CENTRAL", 84)
 	station_sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_clock_tower(group, clock, 17.0, 14.0, 50.0, STONE_LIGHT, ROOF_GREEN)
+	# The east face is what the 'central' menu spawn looks at across Eddy
+	# Avenue; it used to be a blank wall while the sign faced the pickup road.
+	var east_face := station.x + half_width + 0.8
+	for index in 9:
+		var z_east := station.z - 13.0 + float(index) * 3.25
+		ArtUtil.box(group, Vector3(east_face, 7.0, z_east), Vector3(0.9, 14.0, 1.0), STONE_LIGHT)
+		ArtUtil.box(group, Vector3(east_face + 0.48, 8.0, z_east), Vector3(0.15, 6.2, 1.9), WINDOW)
+	ArtUtil.box(group, Vector3(east_face + 0.15, 15.8, station.z), Vector3(0.9, 1.2, 30.0), STONE_LIGHT)
+	var east_sign := ArtUtil.label(group, Vector3(east_face + 0.8, 20.5, station.z), "CENTRAL", 84)
+	east_sign.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	# Grand-entry read on the Eddy Avenue (north) frontage: sandstone steps and
+	# a recessed entry portal. Presentation only (outside the collision box).
+	for step in 3:
+		ArtUtil.box(
+			group,
+			Vector3(station.x, 0.14 + float(step) * 0.22, station.z - 17.2 + float(step) * 0.55),
+			Vector3(14.0 - float(step) * 1.2, 0.22, 1.1), STONE_LIGHT
+		)
+	ArtUtil.box(group, Vector3(station.x, 2.3, station.z - 15.35), Vector3(8.0, 4.6, 0.5), Color("241f1a"))
+	ArtUtil.box(group, Vector3(station.x, 4.9, station.z - 15.5), Vector3(9.4, 0.7, 0.9), STONE_LIGHT)
+	# The tower rises through the building from the forecourt, so its shaft
+	# starts at the ground (the old base_y 17 left the north half of the
+	# 14 m-wide tower hanging 17 m above Eddy Avenue with a visible void).
+	_clock_tower(group, clock, 0.0, 14.0, 67.0, STONE_LIGHT, ROOF_GREEN)
 
 	# Solid collision for the frontage and the clock tower shaft (the roof
 	# canopies behind stay walk/drive-under, as they really are).
@@ -355,22 +378,62 @@ func _build_central_station(world_data: Dictionary) -> void:
 	body.add_child(shell)
 	var tower := CollisionShape3D.new()
 	var tower_box := BoxShape3D.new()
-	tower_box.size = Vector3(14.0, 50.0, 14.0)
+	tower_box.size = Vector3(14.0, 67.0, 14.0)
 	tower.shape = tower_box
-	tower.position = Vector3(clock.x, 17.0 + 25.0, clock.y)
+	tower.position = Vector3(clock.x, 33.5, clock.y)
 	body.add_child(tower)
 
-	# Repeated iron platform canopies behind the concourse, aligned north-south
-	# along the existing rail-station footprint.
+	# Platform yard south of the concourse: four platform slabs with their
+	# iron canopies, five track wells between them and two static K-set style
+	# carriages parked at the platforms (the same presentation pattern as the
+	# static ferries at Circular Quay). The old canopy columns hung 4 m above
+	# empty ground with nothing under the roofs.
+	var platform_z_center := 1180.0
+	var platform_length := 190.0
 	for platform in 4:
 		var x := -142.0 + float(platform) * 18.0
+		# Concrete platform slab and its yellow tactile edge strips.
+		ArtUtil.box(group, Vector3(x, 0.55, platform_z_center), Vector3(11.0, 1.1, platform_length), Color("8e887c"))
+		for edge in [-1.0, 1.0]:
+			ArtUtil.box(group, Vector3(x + edge * 5.1, 1.12, platform_z_center), Vector3(0.7, 0.16, platform_length), Color("c8b23c"))
 		for section in 6:
 			var z := 1100.0 + float(section) * 32.0
-			ArtUtil.box(group, Vector3(x, 8.0, z), Vector3(0.65, 8.0, 0.65), METAL)
+			ArtUtil.box(group, Vector3(x, 6.15, z), Vector3(0.65, 11.7, 0.65), METAL)
 			ArtUtil.box(group, Vector3(x, 12.2, z), Vector3(12.0, 0.55, 30.0), ROOF_SLATE)
 			ArtUtil.box(group, Vector3(x, 13.0, z), Vector3(0.35, 0.4, 29.0), STONE_LIGHT)
+	for well in 5:
+		var track_x := -151.0 + float(well) * 18.0
+		ArtUtil.box(group, Vector3(track_x, 0.05, platform_z_center), Vector3(4.6, 0.2, platform_length), Color("3d3b38"))
+		for rail in [-1.0, 1.0]:
+			ArtUtil.box(group, Vector3(track_x + rail * 0.7175, 0.19, platform_z_center), Vector3(0.14, 0.18, platform_length), Color("90999c"))
+	for train_x in [-133.0, -97.0]:
+		for carriage_index in 3:
+			var carriage_z := 1180.0 - float(carriage_index) * 19.8
+			_build_carriage(group, Vector3(train_x, 0.0, carriage_z))
 	ArtUtil.box(group, station + Vector3(0.0, 20.0, 16.0), Vector3(38.0, 4.0, 0.55), ROOF_GREEN)
 	ArtUtil.label(group, station + Vector3(0.0, 20.0, 16.35), "CENTRAL", 48)
+
+
+## A parked double-deck suburban carriage (Sydney K-set read: silver body,
+## twin dark window bands, orange-red door panels) on the given track centre.
+func _build_carriage(parent: Node3D, at: Vector3) -> void:
+	var carriage := Node3D.new()
+	carriage.name = "CentralCarriage"
+	carriage.position = at
+	parent.add_child(carriage)
+	var body_color := Color("b9bec4")
+	var roof_color := Color("6d7278")
+	var glass_color := Color("22282e")
+	var door_color := Color("c94f38")
+	ArtUtil.box(carriage, Vector3(0.0, 2.2, 0.0), Vector3(3.05, 3.5, 19.0), body_color)
+	ArtUtil.box(carriage, Vector3(0.0, 4.17, 0.0), Vector3(2.85, 0.35, 19.0), roof_color)
+	for side in [-1.0, 1.0]:
+		ArtUtil.box(carriage, Vector3(side * 1.53, 1.35, 0.0), Vector3(0.12, 1.15, 16.5), glass_color)
+		ArtUtil.box(carriage, Vector3(side * 1.53, 2.85, 0.0), Vector3(0.12, 1.15, 16.5), glass_color)
+		for door in [-1.0, 0.0, 1.0]:
+			ArtUtil.box(carriage, Vector3(side * 1.54, 1.7, float(door) * 6.2), Vector3(0.14, 2.6, 1.15), door_color)
+	ArtUtil.box(carriage, Vector3(0.0, 2.0, -9.55), Vector3(2.9, 3.1, 0.3), Color("565b60"))
+	ArtUtil.box(carriage, Vector3(0.0, 2.0, 9.55), Vector3(2.9, 3.1, 0.3), Color("565b60"))
 
 
 ## Sydney Tower Eye — the CBD's tallest spire and its most recognisable

@@ -72,13 +72,14 @@ func _run() -> void:
 	var stair_collisions := stair_root.find_children("*", "CollisionShape3D", true, false)
 	_check(stair_collisions.size() >= 6, "stairs expose solid steps")
 
-	# The existing authored builder must still resolve all eight stations after
+	# The existing authored builder must still resolve all seven stations
+	# (Central moved to the authored landmark in cbd_landmarks.gd) after
 	# delegating its dressing to the component library.
 	var interiors := StationInteriors.new()
 	root.add_child(interiors)
 	interiors.build(null, {})
-	_check(int(interiors.stats.get("stations", 0)) == 8, "interiors builder still builds eight stations")
-	_check(interiors.get_child_count() == 8, "interiors builder creates one root per station")
+	_check(int(interiors.stats.get("stations", 0)) == 7, "interiors builder still builds seven stations")
+	_check(interiors.get_child_count() == 7, "interiors builder creates one root per station")
 	_check(StationInteriors.openings().size() == 4, "underground openings remain unchanged")
 
 	print("RESULT: checks=%d failures=%d" % [checks, failures])

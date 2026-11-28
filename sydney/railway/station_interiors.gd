@@ -14,14 +14,12 @@ const StationComponents := preload("res://sydney/railway/station_components.gd")
 # Stations to flesh out. "route" stations sit on SydneyRailNetwork;
 # "city" stations are placed from world transit coordinates.
 const STATIONS := [
-	{
-		"id": "central",
-		"name": "Central",
-		"x": -174.7, "z": 1156.8,
-		"kind": "surface",
-		"length": 110.0, "width": 18.0,
-		"concourse": Vector2(34.0, 18.0),
-	},
+	# Central is intentionally absent: its authored landmark in
+	# cbd_landmarks.gd (shell, clock tower, canopies, platform slabs and
+	# static carriages) owns the precinct presentation. The old surface
+	# interior here built a sealed 34x18 m concourse room with no doorway
+	# plus duplicated platform dressing ~100 m west of the landmark canopy
+	# grid, which read as a locked concrete shed in the middle of the yard.
 	{
 		"id": "town-hall",
 		"name": "Town Hall",

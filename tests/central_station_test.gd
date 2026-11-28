@@ -99,6 +99,59 @@ func run() -> void:
 						inside = true
 						break
 				check(not inside, "the central menu spawn is outside the station collision")
+
+	# The clock tower rises from the forecourt: some collision box under the
+	# clocktower point must reach the ground and stand ~67 m tall, not hang
+	# from the roof line with a void below it.
+	var tower_to_ground := false
+	for child in collision.get_children():
+		var shape := (child as CollisionShape3D).shape as BoxShape3D
+		if shape == null:
+			continue
+		var at: Vector3 = (child as CollisionShape3D).position
+		if shape.size.y >= 60.0 and at.y - shape.size.y * 0.5 <= 0.5 \
+				and absf(at.x - (-187.6)) < 8.0 and absf(at.z - 1034.1) < 8.0:
+			tower_to_ground = true
+	check(tower_to_ground, "the clock tower collision stands on the ground (~67 m tall)")
+
+	# Meshes are merged per material, so the merged batches' AABBs verify the
+	# platform yard geometrically: canopy columns grounded, real slabs, tracks
+	# and parked carriages under them.
+	var batch_aabbs: Array[AABB] = []
+	var central_labels := 0
+	var east_sign := false
+	for child in station.get_children():
+		if child is MeshInstance3D:
+			batch_aabbs.append((child as MeshInstance3D).get_aabb())
+		if child is Label3D and (child as Label3D).text == "CENTRAL":
+			central_labels += 1
+			if (child as Label3D).position.x > -124.0:
+				east_sign = true
+	check(central_labels >= 3, "three CENTRAL signs (west, east, south band) built (%d)" % central_labels)
+	check(east_sign, "a CENTRAL sign faces the menu spawn on the east face")
+
+	var columns_grounded := false
+	var slabs_built := false
+	var tracks_built := false
+	var carriages_parked := false
+	for aabb in batch_aabbs:
+		# Canopy columns: grounded, topping out at the roof line. The merged
+		# steel batch spans all four canopy rows (~55 m wide).
+		if aabb.position.y <= 0.5 and aabb.end.y >= 11.5 and aabb.end.y <= 12.5:
+			columns_grounded = true
+		# Platform slabs: ~1.1 m tall, 190 m long.
+		if aabb.position.y >= -0.1 and aabb.end.y <= 1.5 and aabb.size.z >= 185.0:
+			slabs_built = true
+		# Ballast + rails: flat strips running the full yard length.
+		if aabb.end.y <= 0.5 and aabb.size.z >= 185.0 and aabb.size.x >= 70.0:
+			tracks_built = true
+		# Parked carriages: three 19 m bodies end to end at platform level.
+		if aabb.position.y >= 0.2 and aabb.end.y <= 4.6 and aabb.size.z >= 55.0:
+			carriages_parked = true
+	check(columns_grounded, "canopy columns stand on the ground (no floating roof posts)")
+	check(slabs_built, "platform slabs exist under the canopies")
+	check(tracks_built, "track wells with ballast and rails run the yard")
+	check(carriages_parked, "static carriages are parked at the platforms")
 	landmarks.free()
 	print("RESULT: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures > 0 else 0)
