@@ -144,8 +144,10 @@
 - [x] **Ferries sailing over land.** Routes follow the water outlines and run out-and-back. `tests/harbour_boats_test.gd` 1/0.
 - [!] **City streetlights look bad.** New tapered pole, curved arm and slim head; seen in a capture. Poles were thickened and re-captured. Owner taste check open.
 - [!] **Esc shows only "click to resume".** Not reproduced: Esc opens/closes the menu in a normal launch. Likely a leftover automated-test window, where menus are disabled. Reopen if it happens from the desktop shortcut.
-- [ ] `tests/harbour_bridge_test.gd` has a winding-check failure and a `sydney_bridge_district.gd:24` out-of-bounds error that also happen on commit 618063a.
-- [ ] Parts of the western CBD streets lie inside the harbour water outline (blue ground beside footpaths).
+- [x] `tests/harbour_bridge_test.gd` has a winding-check failure and a `sydney_bridge_district.gd:24` out-of-bounds error that also happen on commit 618063a.
+  - 2026-11-29: root cause: the `SouthernCityConnector` mesh skipped the `engine_building_mesh()` conversion (math-CCW triangles = Godot back face); and 5 district vehicles (showcase fleet) indexed the 4-entry lane array. Suite now 25 checks / 0 failures.
+- [x] Parts of the western CBD streets lie inside the harbour water outline (blue ground beside footpaths).
+  - 2026-11-29: root cause: the authored Blackwattle Bay overlay (`AUTHORED_BLACKWATTLE` in `tests/harbour_water_prepare.py`) swallowed mapped Ultimo land — 96 streets, 1,121 footpath points and 116 buildings inside the water rings. Reshaped the bay to the arm the Stage B CBD export maps (same projection): mouth on the Johnstons Bay chord, tip near Wentworth Park. Spliced `waterRings[0]` + `landRings[0]` (collar hole), updated the prepare script + coverage probes, added a roads/footpaths/buildings-stay-dry regression to `tests/harbour_water_test.gd` (92 checks, 0 failures; `harbour_boats_test` 1/0). DECISION checkpoint `ca6cef9`.
 
 ## Inbox (agent-proposed)
 
